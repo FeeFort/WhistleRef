@@ -51,7 +51,7 @@ export const QUALIFIER_ALIASES: readonly string[] = Object.freeze(["Qualifiers",
 const MOD_NAMES: Record<string, string> = Object.freeze({
   EZ: "Easy",
   NF: "NoFail",
-  HF: "HalfTime",
+  HT: "HalfTime",
   HR: "HardRock",
   SD: "SuddenDeath",
   DT: "DoubleTime",
