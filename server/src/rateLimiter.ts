@@ -5,7 +5,6 @@ import type { RateLimitConfig, RateLimitEntry, RequestFailure } from "./types.js
 const log = logger.child("core", "rateLimit");
 
 export function rateLimitError(code: RequestFailure["code"], message: string): Error & RequestFailure {
-  // TODO: Apply shared exponential backoff only to operations safe to repeat.
   return Object.assign(new Error(message), { code, outcomeUnknown: false });
 }
 

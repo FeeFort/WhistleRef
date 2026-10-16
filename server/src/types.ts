@@ -84,6 +84,10 @@ export interface LoggerState {
   monotonicNow: () => number;
 }
 
+// error
+export type ErrorWithCode = { code: string };
+export type ErrorWithRetryAfter = { retryAfterMs: number };
+
 // Raw types, basically how osu! api responds
 export interface OsuTokenResponse {
   access_token: string;
@@ -818,7 +822,9 @@ export interface LazerConnectionStateEvent {
 }
 
 export type LazerSyncStateEvent =
-  { type: "lazer_sync_state"; state: "idle" | "syncing" | "synced" } | { type: "lazer_sync_state"; state: "failed"; message: string; failedRoomIds: number[]; scope: "all" | "partial" };
+  | { type: "lazer_sync_state"; state: "idle" | "syncing" | "synced" }
+  | { type: "lazer_sync_state"; state: "retrying"; operation: "ListRooms" | "JoinRoom"; roomId?: number; attempt: number; maxAttempts: number; retryIn: number }
+  | { type: "lazer_sync_state"; state: "failed"; message: string; failedRoomIds: number[]; scope: "all" | "partial" };
 
 export interface LazerRoomErrorEvent {
   type: "lazer_room_error";

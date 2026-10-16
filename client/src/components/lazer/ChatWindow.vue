@@ -14,8 +14,21 @@ import { parseMappoolMessage } from "../../composables/useMappoolChat";
 
 const { nickColor: baseNickColor } = useNickColor();
 const { primaryColor } = useDarkMode();
-const { highlightReferee, highlightTeams, redTeamColor, blueTeamColor, unassignedColorMode, unassignedColor, timestampMode, highlightWords, highlightStyles, highlightColorMode, highlightColor } =
-  useChatSettings();
+const {
+  highlightReferee,
+  highlightBanchoBot,
+  highlightTeams,
+  banchoBotColor,
+  redTeamColor,
+  blueTeamColor,
+  unassignedColorMode,
+  unassignedColor,
+  timestampMode,
+  highlightWords,
+  highlightStyles,
+  highlightColorMode,
+  highlightColor,
+} = useChatSettings();
 
 const teamHighlights = computed(() =>
   normalizeTeamHighlights([
@@ -165,6 +178,7 @@ function insertDraftText(text) {
 
 function nickColor(author, team) {
   if (isReferee(author)) return "var(--app-primary)";
+  if (isBanchoBot(author)) return banchoBotColor.value;
   if (team?.toLowerCase() === "red") return redTeamColor.value;
   if (team?.toLowerCase() === "blue") return blueTeamColor.value;
   if (unassignedColorMode.value === "custom") {
@@ -178,6 +192,10 @@ function isReferee(author) {
   return !!normalizedAuthor && props.refereeUsers.some((nick) => normalizeNick(nick) === normalizedAuthor);
 }
 
+function isBanchoBot(author) {
+  return author === "BanchoBot" || author === "WhistleBot";
+}
+
 function normalizeNick(nick) {
   return String(nick || "")
     .replaceAll(" ", "_")
@@ -186,6 +204,12 @@ function normalizeNick(nick) {
 
 function nickStyle(author, team) {
   const color = nickColor(author, team);
+  if (isBanchoBot(author) && highlightBanchoBot.value) {
+    return {
+      background: banchoBotColor.value,
+      color: "var(--app-bg)",
+    };
+  }
   if (isReferee(author) && highlightReferee.value) {
     return {
       background: "var(--app-primary-dark)",
@@ -644,7 +668,7 @@ function forwardCommand(command) {
             <span
               class="chat-line__nick"
               :class="{
-                'chat-line__nick--badge': isReferee(msg.author) && highlightReferee,
+                'chat-line__nick--badge': (isReferee(msg.author) && highlightReferee) || (isBanchoBot(msg.author) && highlightBanchoBot),
               }"
               :style="nickStyle(msg.author, msg.team)"
               >{{ msg.author }}</span

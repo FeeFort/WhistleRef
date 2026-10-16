@@ -59,12 +59,13 @@ test("REST 429 pauses later calls and retains retry metadata", async (t) => {
   const previousWait = config.restRateLimit.maxWaitMs;
   config.restRateLimit.maxWaitMs = 20;
   let calls = 0;
+  // Retry-After above transportRetry.maxRetryAfter, so fetchApi does not retry it.
   t.mock.method(globalThis, "fetch", async () => {
     calls++;
-    return new Response("", { status: 429, headers: { "Retry-After": "1" } });
+    return new Response("", { status: 429, headers: { "Retry-After": "60" } });
   });
   try {
-    await assert.rejects(fetchApi("token", "me"), { code: "RATE_LIMITED", retryAfterMs: 1000, outcomeUnknown: false });
+    await assert.rejects(fetchApi("token", "me"), { code: "RATE_LIMITED", retryAfterMs: 60_000, outcomeUnknown: false });
     await assert.rejects(fetchApi("token", "me"), { code: "RATE_LIMIT_WAIT_TIMEOUT", outcomeUnknown: false });
     assert.equal(calls, 1);
   } finally {

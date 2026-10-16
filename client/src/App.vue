@@ -48,12 +48,13 @@ import { useNickColor } from "./composables/useNickColor";
 import { clearRememberedCredentials, loadRememberedCredentials, loadOsuAuthData, saveRememberedCredentials, saveOsuAuthData } from "./composables/useRememberedCredentials";
 import { getOsuRedirectUri, readOsuAuthorizationCallback, startOsuAuthorization } from "./composables/useOsuOAuth";
 import { useServerConnection } from "./composables/useServerConnection";
-import { clearLazerRoomResourceCache, getLazerCachedProfile, loadLazerCachedBeatmap, loadLazerCachedProfile } from "./composables/useLazerRoomResourceCache";
+import { clearLazerRoomResourceCache, getLazerCachedProfile, loadLazerCachedBeatmap, loadLazerCachedProfile, loadLazerCachedProfileByUsername } from "./composables/useLazerRoomResourceCache";
 import { formatLobbyTemplate, useLobbyMessages } from "./composables/useLobbyMessages";
 import { sortMappoolSlots, useMappool } from "./composables/useMappool";
 import { advanceMappoolChatContext, createMappoolChatContext } from "./composables/useMappoolChat";
 import { useNowPlayingSettings } from "./composables/useNowPlayingSettings";
 import { NOTIFICATION_SOUNDS, NOTIFICATION_TRIGGER_OPTIONS, getNotificationSoundUrl, useNotifications } from "./composables/useNotifications";
+import modsByRuleset from "./assets/mods/mods.json";
 
 const commandScrollToken = ref(0);
 const savedLogin = localStorage.getItem("whistleref-remembered-login") || "";
@@ -166,6 +167,7 @@ const {
   addLazerReferee,
   removeLazerReferee,
   stopLazerMatchCountdown,
+  sendLazerCommand,
   requestApi,
   checkUpdate,
   startUpdate,
@@ -208,6 +210,8 @@ const pendingLazerUserProfiles = new Set();
 const pendingLazerStyleBeatmaps = new Set();
 const lazerStyleChangedUsers = reactive({});
 const pendingLazerPlaylistRestores = new Map();
+const pendingLazerLegacyCommands = new Map();
+let lazerLegacySequence = 0;
 const lazerSinglePlaylistMatches = new Map();
 
 function cacheLobbyPlayers(chatId, players) {
@@ -414,6 +418,14 @@ const chatSettingChanged = computed(() => ({
 watch(
   lastEvent,
   (event) => {
+    const legacyCommand = event?.requestId ? pendingLazerLegacyCommands.get(event.requestId) : null;
+    if (legacyCommand && ((event.type === "ack" && event.received === legacyCommand.type) || (event.type === "error" && event.request === legacyCommand.type))) {
+      pendingLazerLegacyCommands.delete(event.requestId);
+      if (legacyCommand.timeoutId) window.clearTimeout(legacyCommand.timeoutId);
+      appendWhistleBotMessage(legacyCommand.roomId, event.type === "ack" ? legacyCommand.success : legacyCommand.failure);
+      return;
+    }
+
     if (event?.type === "lazer_chat_history") {
       appendLazerChatHistory(event.roomId, event.messages, event.users);
       return;
@@ -1419,6 +1431,8 @@ onBeforeUnmount(() => {
   for (const timeoutId of lazerNowPlayingFinishedTimeouts.values()) window.clearTimeout(timeoutId);
   lazerNowPlayingFinishedTimeouts.clear();
   pendingLazerPlaylistRestores.clear();
+  for (const command of pendingLazerLegacyCommands.values()) window.clearTimeout(command.timeoutId);
+  pendingLazerLegacyCommands.clear();
 });
 
 function openSettings() {
@@ -2435,6 +2449,329 @@ function appendChatMessage(chatId, message, { notify = false } = {}) {
   if (notify) notifyIncomingMessage(chatId, message);
 }
 
+function appendWhistleBotMessage(roomId, text) {
+  const id = Number(roomId);
+  if (!Number.isInteger(id) || id <= 0 || !text) return;
+  appendChatMessage(lazerChatId(id), {
+    id: `whistlebot-${Date.now()}-${Math.random()}`,
+    author: "WhistleBot",
+    text,
+    time: new Date().toISOString(),
+  });
+}
+
+function nextLazerLegacyRequestId() {
+  lazerLegacySequence += 1;
+  return `lazer-legacy-${Date.now()}-${lazerLegacySequence}`;
+}
+
+function sendLegacyLazerRequest(roomId, type, payload, { success, failure }) {
+  const requestId = nextLazerLegacyRequestId();
+  const command = {
+    roomId,
+    type,
+    success,
+    failure,
+    timeoutId: window.setTimeout(() => {
+      if (!pendingLazerLegacyCommands.delete(requestId)) return;
+      appendWhistleBotMessage(roomId, failure);
+    }, 12000),
+  };
+  pendingLazerLegacyCommands.set(requestId, command);
+  if (sendLazerCommand(type, { room_id: roomId, ...payload }, requestId)) return true;
+  pendingLazerLegacyCommands.delete(requestId);
+  window.clearTimeout(command.timeoutId);
+  appendWhistleBotMessage(roomId, failure);
+  return false;
+}
+
+function normalizeLazerUserName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^@+/, "")
+    .replaceAll("_", " ")
+    .toLowerCase();
+}
+
+async function resolveLazerLegacyUser(roomId, target) {
+  const value = String(target || "").trim();
+  if (!value) return null;
+  const numericId = /^\d+$/.test(value) ? Number(value) : null;
+  if (Number.isInteger(numericId) && numericId > 0) {
+    const cached = getLazerCachedProfile(roomId, numericId) || lazerUserProfiles[numericId];
+    if (cached?.username) return { userId: numericId, username: cached.username };
+    try {
+      const profile = await loadLazerCachedProfile(roomId, numericId, requestApi);
+      if (profile) {
+        lazerUserProfiles[numericId] = profile;
+        return { userId: numericId, username: profile.username || `User ${numericId}` };
+      }
+    } catch {
+      return { userId: numericId, username: `User ${numericId}` };
+    }
+    return { userId: numericId, username: `User ${numericId}` };
+  }
+
+  const normalized = normalizeLazerUserName(value);
+  for (const [userId, profile] of Object.entries(lazerUserProfiles)) {
+    if (normalizeLazerUserName(profile?.username) === normalized) return { userId: Number(userId), username: profile.username };
+  }
+  try {
+    const profile = await loadLazerCachedProfileByUsername(roomId, value, requestApi);
+    if (!profile) return null;
+    lazerUserProfiles[profile.userId] = profile;
+    return { userId: profile.userId, username: profile.username || value };
+  } catch {
+    return null;
+  }
+}
+
+function lazerLegacyPlayerExists(roomId, userId) {
+  const room = lazerRooms[lazerChatId(roomId)];
+  return Array.isArray(room?.players) && room.players.some((player) => Number(player?.user_id) === Number(userId));
+}
+
+async function handleLazerLegacyCommand(roomId, input) {
+  const match = String(input || "")
+    .trim()
+    .match(/^!mp\s+([a-z]+)(?:\s+([\s\S]*))?$/i);
+  if (!match) return;
+  const command = match[1].toLowerCase();
+  const args = String(match[2] || "").trim();
+  const failure = "The command could not be completed.";
+
+  if (command === "lock" || command === "unlock") {
+    const locked = command === "lock";
+    sendLegacyLazerRequest(roomId, "lazer_set_lock_state", { locked }, { success: locked ? "Locked the match" : "Unlocked the match", failure });
+    return;
+  }
+
+  if (command === "size") {
+    if (!/^\d+$/.test(args)) return;
+    const size = Number(args);
+    sendLegacyLazerRequest(roomId, "lazer_change_room_settings", { max_participants: size }, { success: `Changed match to size ${size || "Infinite"}`, failure });
+    return;
+  }
+
+  if (command === "set") {
+    const setMatch = args.match(/^(\d+)\s+(\d+)$/);
+    if (!setMatch) return;
+    const mode = Number(setMatch[1]);
+    const size = Number(setMatch[2]);
+    const modes = { 0: ["head_to_head", "HeadToHead"], 2: ["team_versus", "TeamVs"] };
+    if (mode === 1 || mode === 3) {
+      appendWhistleBotMessage(roomId, "This team mode is not supported in Lazer.");
+      return;
+    }
+    if (!modes[mode]) return;
+    const [match_type, label] = modes[mode];
+    sendLegacyLazerRequest(roomId, "lazer_change_room_settings", { match_type, max_participants: size }, { success: `Changed match settings to ${size || "Infinite"} slots, ${label}`, failure });
+    return;
+  }
+
+  if (command === "move") {
+    const moveMatch = args.match(/^(.+?)\s+(\d+)$/);
+    if (!moveMatch || Number(moveMatch[2]) < 1) return;
+    const slot = Number(moveMatch[2]);
+    const user = await resolveLazerLegacyUser(roomId, moveMatch[1]);
+    if (!user || !lazerLegacyPlayerExists(roomId, user.userId)) return appendWhistleBotMessage(roomId, "User not found");
+    sendLegacyLazerRequest(
+      roomId,
+      "lazer_move_user",
+      { user_id: user.userId, slot: slot - 1 },
+      { success: `Moved ${user.username} into slot ${slot}`, failure: `Failed to move player to slot ${slot}` },
+    );
+    return;
+  }
+
+  if (command === "invite" || command === "addref" || command === "removeref") {
+    const user = await resolveLazerLegacyUser(roomId, args);
+    if (!user) return appendWhistleBotMessage(roomId, "User not found");
+    const details =
+      command === "invite"
+        ? ["lazer_invite_player", `Invited ${user.username} to the room`]
+        : command === "addref"
+          ? ["lazer_add_referee", `Added ${user.username} to the match referees`]
+          : ["lazer_remove_referee", `Removed ${user.username} from the match referees`];
+    sendLegacyLazerRequest(roomId, details[0], { user_id: user.userId }, { success: details[1], failure });
+    return;
+  }
+
+  if (command === "close") {
+    sendLegacyLazerRequest(roomId, "lazer_close_room", {}, { success: "Closed the room", failure });
+    return;
+  }
+
+  if (command === "start") {
+    if (args && !/^\d+$/.test(args)) return;
+    const countdown = args ? Number(args) : 0;
+    sendLegacyLazerRequest(roomId, "lazer_start_match", { countdown }, { success: countdown ? `Started the match with a ${countdown} second countdown` : "Started the match", failure });
+    return;
+  }
+
+  if (command === "kick") {
+    const user = await resolveLazerLegacyUser(roomId, args);
+    if (!user || !lazerLegacyPlayerExists(roomId, user.userId)) return appendWhistleBotMessage(roomId, "User not found");
+    sendLegacyLazerRequest(roomId, "lazer_kick_player", { user_id: user.userId }, { success: `Kicked ${user.username} from the match`, failure });
+    return;
+  }
+
+  if (command === "team") {
+    const teamMatch = args.match(/^(.+?)\s+(red|blue)$/i);
+    if (!teamMatch) return;
+    const team = teamMatch[2].toLowerCase();
+    const user = await resolveLazerLegacyUser(roomId, teamMatch[1]);
+    if (!user || !lazerLegacyPlayerExists(roomId, user.userId)) return appendWhistleBotMessage(roomId, "User not found");
+    sendLegacyLazerRequest(roomId, "lazer_move_user", { user_id: user.userId, team }, { success: `Moved ${user.username} to team ${team === "red" ? "Red" : "Blue"}`, failure });
+    return;
+  }
+
+  if (command === "map") {
+    if (!/^\d+$/.test(args) || Number(args) <= 0) return appendWhistleBotMessage(roomId, "Invalid map ID provided");
+    try {
+      const beatmap = await loadLazerCachedBeatmap(roomId, Number(args), requestApi);
+      if (!beatmap) throw new Error("Map not found");
+      const currentItem = getLazerCurrentPlaylistItem(lazerRooms[lazerChatId(roomId)]);
+      sendLegacyLazerRequest(
+        roomId,
+        "lazer_edit_current_playlist_item",
+        { beatmap_id: beatmap.beatmapId, ruleset_id: beatmap.rulesetId ?? currentItem?.ruleset_id ?? undefined },
+        { success: `Changed beatmap to https://osu.ppy.sh/b/${beatmap.beatmapId} ${beatmap.artist} - ${beatmap.title}`, failure: "Invalid map ID provided" },
+      );
+    } catch {
+      appendWhistleBotMessage(roomId, "Invalid map ID provided");
+    }
+    return;
+  }
+
+  if (command === "mods") {
+    const room = lazerRooms[lazerChatId(roomId)];
+    const modDefinitions = getAllLazerMultiplayerMods();
+    const currentRulesetModDefinitions = getLazerMultiplayerMods(room);
+    const rawTokens = args ? args.split(/\s+/).filter(Boolean) : [];
+    if (rawTokens.length === 1 && rawTokens[0] === "0") {
+      const currentItemId = Number(room?.current_playlist_item_id ?? room?.playlist_item_id ?? room?.state?.playlist_item_id);
+      const currentItem =
+        (Number.isInteger(currentItemId) && Array.isArray(room?.playlist) ? room.playlist.find((item) => Number(item?.id) === currentItemId) : null) || getLazerCurrentPlaylistItem(room);
+      sendLegacyLazerRequest(
+        roomId,
+        "lazer_edit_current_playlist_item",
+        {
+          required_mods: [],
+          allowed_mods: [],
+          freestyle: false,
+          ruleset_id: currentItem?.ruleset_id ?? undefined,
+          beatmap_id: currentItem?.beatmap_id ?? undefined,
+        },
+        { success: "Updated match mods: disabled all mods", failure },
+      );
+      return;
+    }
+    const expandedTokens = [];
+    const zeroWithFreemod = rawTokens.some((token) => token === "0") && rawTokens.every((token) => token === "0" || /^(?:fm|freemod)$/i.test(token));
+    for (const rawToken of rawTokens) {
+      if (zeroWithFreemod && rawToken === "0") continue;
+      if (/^\d+$/.test(rawToken)) {
+        const parsedMask = expandLegacyStableModMask(rawToken);
+        if (!parsedMask) {
+          appendWhistleBotMessage(roomId, `Mod ${rawToken} not found`);
+          return;
+        }
+        expandedTokens.push(...parsedMask);
+      } else {
+        expandedTokens.push(rawToken);
+      }
+    }
+    const tokens = normalizeMapMods(expandedTokens);
+    const wantsFreemod = tokens.some((acronym) => acronym === "FM");
+    const requested = tokens.filter((acronym) => acronym !== "FM");
+    for (const acronym of requested) {
+      const definition = modDefinitions.get(acronym);
+      if (!definition) {
+        appendWhistleBotMessage(roomId, `Mod ${acronym} not found`);
+        return;
+      }
+      const currentRulesetDefinition = currentRulesetModDefinitions.get(acronym);
+      const fullName = definition.Name || acronym;
+      if (!currentRulesetDefinition) {
+        appendWhistleBotMessage(roomId, `Mod ${fullName} is not supported in this ruleset`);
+        return;
+      }
+      if (currentRulesetDefinition.ValidForMultiplayer !== true) {
+        appendWhistleBotMessage(roomId, `Mod ${currentRulesetDefinition.Name || fullName} is not supported in multiplayer rooms`);
+        return;
+      }
+    }
+
+    const conflicts = [];
+    for (let index = 0; index < requested.length; index += 1) {
+      for (let otherIndex = index + 1; otherIndex < requested.length; otherIndex += 1) {
+        const left = modDefinitions.get(requested[index]);
+        const right = modDefinitions.get(requested[otherIndex]);
+        const leftIncompatible = Array.isArray(left?.IncompatibleMods) && left.IncompatibleMods.map((mod) => String(mod).toUpperCase()).includes(requested[otherIndex]);
+        const rightIncompatible = Array.isArray(right?.IncompatibleMods) && right.IncompatibleMods.map((mod) => String(mod).toUpperCase()).includes(requested[index]);
+        if (leftIncompatible || rightIncompatible) conflicts.push(`${requested[index]} + ${requested[otherIndex]}`);
+      }
+    }
+    if (conflicts.length) {
+      appendWhistleBotMessage(roomId, formatLazerModConflictError(conflicts));
+      return;
+    }
+
+    const requiredMods = requested.map((acronym) => ({ acronym }));
+    const requiredConflicts = new Set(requested);
+    for (const requiredAcronym of requested) {
+      const requiredDefinition = modDefinitions.get(requiredAcronym);
+      for (const incompatible of Array.isArray(requiredDefinition?.IncompatibleMods) ? requiredDefinition.IncompatibleMods : []) {
+        requiredConflicts.add(String(incompatible).toUpperCase());
+      }
+    }
+    for (const [acronym, definition] of modDefinitions) {
+      if (requested.some((requiredAcronym) => Array.isArray(definition?.IncompatibleMods) && definition.IncompatibleMods.map((mod) => String(mod).toUpperCase()).includes(requiredAcronym))) {
+        requiredConflicts.add(acronym);
+      }
+    }
+    const allowedMods = wantsFreemod
+      ? [...modDefinitions.values()]
+          .filter((mod) => mod?.ValidForMultiplayer && mod?.ValidForMultiplayerAsFreeMod)
+          .map((mod) => String(mod.Acronym).toUpperCase())
+          .filter((acronym) => !requiredConflicts.has(acronym))
+          .map((acronym) => ({ acronym }))
+      : [];
+    const enabledModNames = requested.map((acronym) => modDefinitions.get(acronym)?.Name || acronym);
+    const summaryParts = [];
+    if (enabledModNames.length) summaryParts.push(`enabled ${enabledModNames.join(", ")}`);
+    summaryParts.push(`${wantsFreemod ? "enabled" : "disabled"} Freemod`);
+    const currentItemId = Number(room?.current_playlist_item_id ?? room?.playlist_item_id ?? room?.state?.playlist_item_id);
+    const currentItem =
+      (Number.isInteger(currentItemId) && Array.isArray(room?.playlist) ? room.playlist.find((item) => Number(item?.id) === currentItemId) : null) || getLazerCurrentPlaylistItem(room);
+    sendLegacyLazerRequest(
+      roomId,
+      "lazer_edit_current_playlist_item",
+      {
+        required_mods: requiredMods,
+        allowed_mods: allowedMods,
+        freestyle: false,
+        ruleset_id: currentItem?.ruleset_id ?? undefined,
+        beatmap_id: currentItem?.beatmap_id ?? undefined,
+      },
+      { success: `Updated match mods: ${summaryParts.join(", ")}`, failure },
+    );
+    return;
+  }
+
+  if (command === "abort") {
+    if (nowPlayingByLobby[lazerChatId(roomId)]?.status !== "playing") return appendWhistleBotMessage(roomId, "The match is not in progress");
+    sendLegacyLazerRequest(roomId, "lazer_abort_match", {}, { success: "Aborted the match", failure });
+    return;
+  }
+
+  if (command === "name") {
+    if (!args) return;
+    sendLegacyLazerRequest(roomId, "lazer_change_room_settings", { name: args }, { success: `Room name updated to "${args}"`, failure });
+  }
+}
+
 function downloadChatHistory() {
   const chatId = activeChat.value;
   const messages = chatId === "bancho" ? banchoMessages.value : channelMessages[chatId] || [];
@@ -2503,7 +2840,54 @@ const MOD_ALIASES = Object.freeze({
   mirror: "MR",
   fadein: "FI",
 });
+const LEGACY_STABLE_MOD_MASKS = Object.freeze({
+  NF: 1,
+  EZ: 2,
+  TD: 4,
+  HD: 8,
+  HR: 16,
+  SD: 32,
+  DT: 64,
+  RX: 128,
+  HT: 256,
+  FL: 1024,
+  SO: 4096,
+  AP: 8192,
+  NC: 576,
+  PF: 16416,
+  "1K": 67108864,
+  "2K": 268435456,
+  "3K": 134217728,
+  "4K": 32768,
+  "5K": 65536,
+  "6K": 131072,
+  "7K": 262144,
+  "8K": 524288,
+  "9K": 16777216,
+  "10K": 33554432,
+  FI: 1048576,
+  RD: 2097152,
+  MR: 1073741824,
+});
 const MODS_WITHOUT_STAR_RATING_EFFECT = new Set(["FM", "NF", "RX", "SO", "AP", "SD"]);
+
+function expandLegacyStableModMask(value) {
+  const mask = Number(value);
+  if (!Number.isSafeInteger(mask) || mask <= 0) return null;
+  let remaining = mask;
+  const expanded = [];
+  const entries = Object.entries(LEGACY_STABLE_MOD_MASKS).sort(([left], [right]) => {
+    const leftCompound = left === "NC" || left === "PF";
+    const rightCompound = right === "NC" || right === "PF";
+    return Number(rightCompound) - Number(leftCompound) || LEGACY_STABLE_MOD_MASKS[right] - LEGACY_STABLE_MOD_MASKS[left];
+  });
+  for (const [acronym, bitmask] of entries) {
+    if ((remaining & bitmask) !== bitmask) continue;
+    remaining -= bitmask;
+    expanded.push(acronym);
+  }
+  return remaining === 0 ? expanded.reverse() : null;
+}
 
 function normalizeMapMods(value) {
   const values = Array.isArray(value) ? value : String(value || "").split(/\s*,\s*|\s+/);
@@ -2513,6 +2897,38 @@ function normalizeMapMods(value) {
     .filter((mod) => !/^(?:enabled|disabled|none)$/i.test(mod))
     .map((mod) => MOD_ALIASES[mod.toLowerCase()] || mod.toUpperCase())
     .filter((mod, index, mods) => mods.indexOf(mod) === index);
+}
+
+function getLazerMultiplayerMods(room) {
+  const currentItem = getLazerCurrentPlaylistItem(room);
+  const rulesetId = Number(currentItem?.ruleset_id ?? room?.ruleset_id);
+  const ruleset = (Array.isArray(modsByRuleset) ? modsByRuleset : []).find((entry) => Number(entry?.RulesetID) === rulesetId) || modsByRuleset?.[0];
+  const result = new Map();
+  for (const mod of Array.isArray(ruleset?.Mods) ? ruleset.Mods : []) {
+    const acronym = String(mod?.Acronym || "")
+      .trim()
+      .toUpperCase();
+    if (acronym && !result.has(acronym)) result.set(acronym, mod);
+  }
+  return result;
+}
+
+function getAllLazerMultiplayerMods() {
+  const result = new Map();
+  for (const ruleset of Array.isArray(modsByRuleset) ? modsByRuleset : []) {
+    for (const mod of Array.isArray(ruleset?.Mods) ? ruleset.Mods : []) {
+      const acronym = String(mod?.Acronym || "")
+        .trim()
+        .toUpperCase();
+      if (acronym && !result.has(acronym)) result.set(acronym, mod);
+    }
+  }
+  return result;
+}
+
+function formatLazerModConflictError(conflicts) {
+  const names = [...new Set(conflicts)].join(", ");
+  return `Mods ${names} conflict with each other.`;
 }
 
 async function refreshNowPlayingMapAttributes(chatId, map) {
@@ -2819,6 +3235,16 @@ function handleSend(text) {
     const command = text.trim();
     if (/^\/savelog$/i.test(command)) {
       downloadChatHistory();
+      return;
+    }
+
+    // Legacy !mp commands are deliberately local: even unknown commands must
+    // not leak into the lazer room or its history.
+    if (command.startsWith("!")) {
+      const roomId = Number(activeLazerRoom.value?.room_id);
+      if (Number.isInteger(roomId) && roomId > 0 && !activeLazerRoom.value?.closed) {
+        void handleLazerLegacyCommand(roomId, command);
+      }
       return;
     }
 

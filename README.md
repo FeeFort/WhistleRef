@@ -71,13 +71,13 @@ After a successful login, you will see the main WhistleRef workspace.
 
 Use the create lobby controls to make a new multiplayer room. Once you join it, the same referee tools will be available there too. Alternatively, you can use the `!mp make` command to BanchoBot to create a lobby.
 
-![Creating a lobby](assets/create-lobby.png)
+![Creating a lobby](assets/create-lobby-stable.png)
 
 ### Joining a lobby
 
 Use the channel controls to join a multiplayer lobby that already exists. WhistleRef reads its current state from Bancho IRC and keeps the players, teams, settings, map, mods, timer, and scores up to date. You can use either mp link or ID.
 
-![Joining a channel](assets/join-channel.png)
+![Joining a channel](assets/join-channel-stable.png)
 
 ### Shortcuts
 
@@ -146,18 +146,15 @@ Install dependencies for both client and server:
 cd client
 npm install
 
-cd ..\server
+cd ../server
 npm install
 ```
 
-Start the development client:
+Then start the development instance:
 
 ```bash
-cd server
 npm run start
 ```
-
-Then you'll be automatically redirected to the Vite local server webpage (usually `http://localhost:3000`)
 
 To build:
 
@@ -173,7 +170,7 @@ The built files go directly into `build` directory.
 
 ### Optional configuration
 
-Create `client/.env` based on `client/.env.example` if you need to change the defaults:
+Create `client/.env` if you need to change the defaults:
 
 ```env
 VITE_PRIMEUI_LICENSE_KEY=your_primevue_license_key
@@ -203,27 +200,6 @@ WhistleRef stores user-specific data in your browser. This can include osu! OAut
 Logging out closes the IRC connection and removes the saved local IRC login. You can also use the logout button next to your osu! profile to disconnect the OAuth profile.
 
 If you clear the browser's site data, these local settings and authorization details will be removed too.
-
-## Mappool builder
-
-The optional `mappool_builder.py` script helps create a mappool JSON file using osu! API v2. It asks for the mappool name, stage, map slots, beatmap IDs or URLs, mods, and additional commands, then builds everything into the current `categories`/`slots` JSON format. You'll need [Python](https://www.python.org/downloads/) installed for it to work.
-
-Before running it, check the osu! API credentials near the top of the script:
-
-```python
-OSU_CLIENT_ID = "<YOUR_OSU_CLIENT_ID>"
-OSU_CLIENT_SECRET = "<YOU_OSU_CLIENT_SECRET>"
-```
-
-Then run it:
-
-```bash
-python mappool_builder.py
-```
-
-The script supports arguments `--debug` (which enables additional logging) and `--update /path/to/old/json` (which updates old JSON files to match new schema)
-
-The generated `mappool.json` can then be imported into WhistleRef.
 
 ## Troubleshooting
 

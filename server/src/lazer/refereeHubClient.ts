@@ -3,6 +3,7 @@ import * as signalR from "@microsoft/signalr";
 import { getAccessToken } from "../auth/auth.js";
 import { config } from "../config.js";
 import { logger } from "../logger/logger.js";
+import { backoffDelay, sleep } from "../retry.js";
 import { HubEventHandler, ResyncHandler, HubEventType, LazerHubEvent, HubEventPayloads, LazerStatusHandler } from "../types.js";
 
 const log = logger.child("lazer", "refereeHub");
@@ -188,7 +189,10 @@ export async function connectToRefereeHub(onEvent: HubEventHandler, onResync: Re
     .withUrl(new URL("/referee", config.spectatorServerUrl).toString(), {
       accessTokenFactory: () => getAccessToken(),
     })
-    .withAutomaticReconnect()
+    // The default policy gives up after 4 attempts (~42s) and leaves the session dead, so keep retrying with capped backoff.
+    .withAutomaticReconnect({
+      nextRetryDelayInMilliseconds: ({ previousRetryCount }) => backoffDelay(previousRetryCount + 1, config.hubReconnect.baseDelay, config.hubReconnect.maxDelay).delay,
+    })
     .configureLogging({
       log: (level, message) => {
         // Keep protocol payload logging in the application
@@ -248,12 +252,27 @@ export async function connectToRefereeHub(onEvent: HubEventHandler, onResync: Re
 
   log.info("Connecting", { session: generation, url: new URL("/referee", config.spectatorServerUrl).toString() });
   onStatus?.({ type: "lazer_connection_state", state: "connecting" });
-  try {
-    await hub.start();
-  } catch (error) {
-    log.warn("Connection failed", { session: generation, error });
-    if (generation === connectionGeneration) onStatus?.({ type: "lazer_connection_state", state: "disconnected", reason: error instanceof Error ? error.message : String(error) });
-    throw error;
+  // withAutomaticReconnect only covers connections that were established once, so retry the initial start() here.
+  const signal = sessionAbort.signal;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await hub.start();
+      break;
+    } catch (error) {
+      const canRetry = attempt < config.hubReconnect.initialAttempts && generation === connectionGeneration && !signal.aborted;
+      log.warn("Connection failed", { session: generation, attempt, willRetry: canRetry, error });
+      if (canRetry) {
+        const { delay } = backoffDelay(attempt, config.hubReconnect.baseDelay, config.hubReconnect.maxDelay);
+        try {
+          await sleep(delay, signal);
+          continue;
+        } catch {
+          // Session was replaced or stopped while waiting
+        }
+      }
+      if (generation === connectionGeneration) onStatus?.({ type: "lazer_connection_state", state: "disconnected", reason: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
   }
   if (generation !== connectionGeneration) {
     log.trace("Stale hub result ignored", { generation, currentGeneration: connectionGeneration });
@@ -264,7 +283,44 @@ export async function connectToRefereeHub(onEvent: HubEventHandler, onResync: Re
   return hub;
 }
 
+// I realise that JoinRoom can't be really considered idempotent, but it's the only hub method
+// called on lobby refresh, and it can fail due to network issues, so we're retrying it
+const RETRYABLE_HUB_METHODS = new Set(["ListRooms", "JoinRoom"]);
+
+function isRetryableHubError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if ("code" in error) return error.code === "REQUEST_TIMEOUT" || error.code === "INVALID_RESPONSE";
+  // Generic server-side HubException, e.g. the hub still holding a stale referee membership after reconnect.
+  return /^An unexpected error occurred invoking '.+' on the server\.$/.test(error.message);
+}
+
 export async function invokeHub<T = unknown>(methodName: string, ...args: unknown[]): Promise<T> {
+  return invokeHubWithRetry<T>(methodName, () => {}, ...args);
+}
+
+export async function invokeHubWithRetry<T = unknown>(methodName: string, onRetry: (attempt: number, maxAttempts: number, retryIn: number) => void, ...args: unknown[]): Promise<T> {
+  const allowedAttempts = RETRYABLE_HUB_METHODS.has(methodName) ? config.hubRetry.attempts : 1;
+  const generation = connectionGeneration;
+  const signal = sessionAbort.signal;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await invokeHubOnce<T>(methodName, ...args);
+    } catch (error) {
+      if (attempt >= allowedAttempts || !isRetryableHubError(error) || generation !== connectionGeneration || signal.aborted) throw error;
+      const { delayCap, delay } = backoffDelay(attempt, config.hubRetry.baseDelay, config.hubRetry.maxDelay);
+      log.debug("Hub request failed, retrying", { methodName, attempt, allowedAttempts, delayCap, delay, error });
+      onRetry(attempt + 1, allowedAttempts, delay);
+      try {
+        await sleep(delay, signal);
+      } catch {
+        // Connection was lost or replaced while waiting; reconnect triggers a full resync anyway.
+        throw error;
+      }
+    }
+  }
+}
+
+async function invokeHubOnce<T>(methodName: string, ...args: unknown[]): Promise<T> {
   const operation = log.traceStart(methodName, () => ({
     session: connectionGeneration,
     args: JSON.stringify(args, (key, value) => (/password|token|secret|authorization/i.test(key) ? "[redacted]" : value)),
@@ -307,8 +363,7 @@ export async function invokeHub<T = unknown>(methodName: string, ...args: unknow
     }
     if (["ListRooms", "JoinRoom", "MakeRoom"].includes(methodName)) {
       if (!isHubResponse(methodName, result) || (methodName === "JoinRoom" && (result as { room_id: number }).room_id !== args[0])) {
-        // TODO: Retry safe snapshot reads through the shared exponential backoff policy.
-        // Do not repeat MakeRoom: an invalid response may follow successful creation.
+        // MakeRoom is never repeated: an invalid response may follow successful creation
         throw Object.assign(new Error(`Invalid ${methodName} response from referee hub.`), {
           code: "INVALID_RESPONSE",
           outcomeUnknown: methodName === "MakeRoom",
@@ -326,8 +381,6 @@ export async function invokeHub<T = unknown>(methodName: string, ...args: unknow
     }
     release?.();
   }
-  // TODO: Apply shared exponential backoff retries only where replay is safe.
-  // Mutations must not be retried blindly: timeout does not cancel the remote call.
   if (generation !== connectionGeneration) {
     log.trace("Stale hub result ignored", { generation, currentGeneration: connectionGeneration });
     throw new Error("SignalR session was replaced.");

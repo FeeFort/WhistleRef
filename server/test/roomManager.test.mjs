@@ -8,6 +8,8 @@ import { roomManager } from "../src/lazer/roomManager.ts";
 // These tests exercise room synchronization; limiter behavior has separate tests.
 config.hubRateLimit.tokensPerSecond = 100_000;
 config.hubRateLimit.capacity = 1000;
+config.hubRetry.baseDelay = 1;
+config.hubRetry.maxDelay = 1;
 
 const snapshot = (roomId, name = "Fresh") => ({
   room_id: roomId,
@@ -560,7 +562,7 @@ await test("room synchronization", async (t) => {
     assert.equal(statuses.at(-1).state, "idle");
   });
 
-  await t.test("resync recovers stale membership once and preserves closed room failures", async () => {
+  await t.test("resync retries stale membership and preserves closed room failures", async () => {
     const attempts = new Map();
     invoke = async (method, roomId) => {
       if (method === "ListRooms") return { room_ids: [100, 101] };
@@ -572,7 +574,7 @@ await test("room synchronization", async (t) => {
     assert.deepEqual(
       [...attempts],
       [
-        [100, 2],
+        [100, config.hubRetry.attempts],
         [101, 2],
       ],
     );
@@ -582,8 +584,38 @@ await test("room synchronization", async (t) => {
     roomManager.removeRoom(101);
   });
 
-  await t.test("resync never repeats local failures or uncertain outcomes", async () => {
-    for (const code of ["REQUEST_TIMEOUT", "REQUEST_CANCELLED", "INVALID_RESPONSE", "RATE_LIMIT_WAIT_TIMEOUT", "RATE_LIMIT_QUEUE_FULL"]) {
+  await t.test("resync reports retry details and clears them after recovery", async () => {
+    let listCalls = 0;
+    let joinCalls = 0;
+    invoke = async (method) => {
+      if (method === "ListRooms") {
+        if (++listCalls === 1) throw new Error("An unexpected error occurred invoking 'ListRooms' on the server.");
+        return { room_ids: [104] };
+      }
+      if (++joinCalls === 1) throw new Error("An unexpected error occurred invoking 'JoinRoom' on the server.");
+      return snapshot(104);
+    };
+    const start = statuses.length;
+    await roomManager.resync();
+    const events = statuses.slice(start).filter((event) => event.type === "lazer_sync_state");
+    assert.deepEqual(
+      events.map((event) => event.state),
+      ["syncing", "retrying", "syncing", "retrying", "syncing", "synced"],
+    );
+    assert.deepEqual(
+      events
+        .filter((event) => event.state === "retrying")
+        .map(({ operation, roomId, attempt, maxAttempts, retryIn }) => ({ operation, roomId, attempt, maxAttempts, validDelay: retryIn >= 0 && retryIn <= config.hubRetry.maxDelay })),
+      [
+        { operation: "ListRooms", roomId: undefined, attempt: 2, maxAttempts: config.hubRetry.attempts, validDelay: true },
+        { operation: "JoinRoom", roomId: 104, attempt: 2, maxAttempts: config.hubRetry.attempts, validDelay: true },
+      ],
+    );
+    roomManager.removeRoom(104);
+  });
+
+  await t.test("resync never repeats local failures", async () => {
+    for (const code of ["REQUEST_CANCELLED", "RATE_LIMIT_WAIT_TIMEOUT", "RATE_LIMIT_QUEUE_FULL"]) {
       let calls = 0;
       invoke = async (method) => {
         if (method === "ListRooms") return { room_ids: [102] };
@@ -592,6 +624,41 @@ await test("room synchronization", async (t) => {
       };
       await assert.rejects(roomManager.resync(), AggregateError);
       assert.equal(calls, 1, code);
+    }
+  });
+
+  await t.test("ListRooms and JoinRoom retry timeouts and invalid responses", async () => {
+    const previousTimeout = config.hubRequestTimeoutMs;
+    config.hubRequestTimeoutMs = 10;
+    try {
+      let calls = 0;
+      invoke = (method) => {
+        calls++;
+        if (calls < 3) return new Promise(() => {});
+        return Promise.resolve(method === "ListRooms" ? { room_ids: [] } : snapshot(103));
+      };
+      assert.deepEqual(await invokeHub("ListRooms"), { room_ids: [] });
+      assert.equal(calls, 3);
+
+      calls = 0;
+      invoke = async () => (++calls < 2 ? { ...snapshot(103), players: null } : snapshot(103));
+      await roomManager.joinRoom(103);
+      assert.equal(calls, 2);
+      roomManager.removeRoom(103);
+    } finally {
+      config.hubRequestTimeoutMs = previousTimeout;
+    }
+  });
+
+  await t.test("mutating hub methods are never retried", async () => {
+    for (const method of ["MakeRoom", "Roll", "ChangeRoomSettings"]) {
+      let calls = 0;
+      invoke = async () => {
+        calls++;
+        throw new Error(`An unexpected error occurred invoking '${method}' on the server.`);
+      };
+      await assert.rejects(invokeHub(method, 1));
+      assert.equal(calls, 1, method);
     }
   });
 
