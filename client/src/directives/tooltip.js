@@ -11,6 +11,10 @@ function isHtmlContent(binding) {
   return typeof binding.value === "object" && binding.value?.html;
 }
 
+function isInteractive(binding) {
+  return typeof binding.value === "object" && binding.value?.interactive === true;
+}
+
 function positionFrom(binding) {
   return Object.keys(binding.modifiers).find((modifier) => ["top", "bottom", "left", "right"].includes(modifier)) || "top";
 }
@@ -58,6 +62,13 @@ function scheduleRemoveTooltip(target) {
   }, HIDE_DELAY);
 }
 
+function hideTooltip(target) {
+  const state = target.__appTooltip;
+  if (!state) return;
+  if (state.interactive) scheduleRemoveTooltip(target);
+  else removeTooltip(target);
+}
+
 function showTooltip(target) {
   const state = target.__appTooltip;
   const content = contentFrom(state?.binding);
@@ -73,14 +84,16 @@ function showTooltip(target) {
     tooltip.setAttribute("role", "tooltip");
     if (htmlContent) tooltip.innerHTML = htmlContent;
     else tooltip.textContent = textContent;
-    tooltip.addEventListener("mouseenter", () => {
-      state.overTooltip = true;
-      window.clearTimeout(state.hideTimer);
-    });
-    tooltip.addEventListener("mouseleave", () => {
-      state.overTooltip = false;
-      scheduleRemoveTooltip(target);
-    });
+    if (state.interactive) {
+      tooltip.addEventListener("mouseenter", () => {
+        state.overTooltip = true;
+        window.clearTimeout(state.hideTimer);
+      });
+      tooltip.addEventListener("mouseleave", () => {
+        state.overTooltip = false;
+        scheduleRemoveTooltip(target);
+      });
+    }
     document.body.appendChild(tooltip);
     state.element = tooltip;
     placeTooltip(target, tooltip, positionFrom(state.binding));
@@ -90,14 +103,14 @@ function showTooltip(target) {
 
 export default {
   mounted(target, binding) {
-    const state = { element: null, showTimer: null, hideTimer: null, binding, overTarget: false, overTooltip: false, focused: false };
+    const state = { element: null, showTimer: null, hideTimer: null, binding, interactive: isInteractive(binding), overTarget: false, overTooltip: false, focused: false };
     const enter = () => {
       state.overTarget = true;
       showTooltip(target);
     };
     const leave = () => {
       state.overTarget = false;
-      scheduleRemoveTooltip(target);
+      hideTooltip(target);
     };
     const focus = () => {
       state.focused = true;
@@ -105,7 +118,7 @@ export default {
     };
     const blur = () => {
       state.focused = false;
-      scheduleRemoveTooltip(target);
+      hideTooltip(target);
     };
     state.enter = enter;
     state.leave = leave;
@@ -119,6 +132,7 @@ export default {
   },
   updated(target, binding) {
     target.__appTooltip.binding = binding;
+    target.__appTooltip.interactive = isInteractive(binding);
     if (!contentFrom(binding) && !isHtmlContent(binding)) removeTooltip(target);
   },
   unmounted(target) {

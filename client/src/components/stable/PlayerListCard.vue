@@ -38,7 +38,7 @@ const { redTeamColor, blueTeamColor } = useChatSettings();
 const MOD_CODES = Object.freeze({
   easy: "EZ",
   nofail: "NF",
-  halftime: "HF",
+  halftime: "HT",
   hardrock: "HR",
   suddendeath: "SD",
   doubletime: "DT",
@@ -147,7 +147,7 @@ function moreModsTooltip(player, mods) {
       return `<span class="app-tooltip__more-mod-row"><span class="app-tooltip__more-mod-icon">${icon || escapeHtml(modCode(acronym))}</span><span>${escapeHtml(name)}</span></span>`;
     })
     .join("");
-  return { html: `<div class="app-tooltip__more-mods">${rows}</div>` };
+  return { html: `<div class="app-tooltip__more-mods">${rows}</div>`, interactive: true };
 }
 </script>
 
