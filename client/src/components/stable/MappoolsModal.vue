@@ -14,6 +14,7 @@ import { escapeRegExp } from "../../composables/useMessageHighlighting";
 import { beatmapCoverBackground } from "../../composables/useBeatmapCover";
 import { DEFAULT_WIN_CONDITION, WIN_CONDITION_TEMPLATES, defaultModsForCategory, serializeMappool, useMappool, winConditionSource } from "../../composables/useMappool";
 import { useServerConnection } from "../../composables/useServerConnection";
+import { formatBeatmapOwners } from "../../composables/useBeatmapAuthors";
 const props = defineProps({ visible: Boolean });
 const emit = defineEmits(["update:visible"]);
 const toast = useToast();
@@ -55,7 +56,7 @@ const previewLoads = new Set();
 const hiddenPreviewKeys = ref(new Set());
 const previewTimers = new Map();
 const previewRequestVersions = new Map();
-const PREVIEW_CACHE_KEY = "whistleref-beatmap-preview-cache";
+const PREVIEW_CACHE_KEY = "whistleref-beatmap-preview-cache-v2";
 const DELETE_CONFIRMATIONS_KEY = "whistleref-mappool-delete-confirmations";
 function readDeleteConfirmations() {
   try {
@@ -528,19 +529,11 @@ async function loadSlotPreview(pool, slot, beatmapId, version) {
       artist: info.artist || info.beatmapset?.artist || "",
       title: info.title || info.beatmapset?.title || info.name || "",
       diff: info.version || "",
-      author: typeof info.creator === "string" ? info.creator : info.creator?.username || "",
+      author: formatBeatmapOwners(info),
       beatmapsetId: info.beatmapset_id || info.beatmapset?.id || null,
       starRating: info.difficulty_rating ?? null,
       totalSeconds: info.total_length ?? null,
     };
-    if (!preview.author && info.user_id != null) {
-      try {
-        const mapper = await requestApi(`/users/${info.user_id}`);
-        preview.author = mapper.username || mapper.name || "";
-      } catch {
-        /* optional mapper data */
-      }
-    }
     if (!isCurrentPreviewRequest(pool, slot, beatmapId, version)) return;
     writePreviewCache(beatmapId, preview);
     const currentPool = mappools.value.find((item) => item.id === pool.id);
@@ -574,6 +567,24 @@ function importBulkMaps({ maps }) {
 
   const categories = [...(pool.categories || [])];
   const slots = pool.slots.map((slot) => ({ ...slot, mods: [...(slot.mods || [])], commands: [...(slot.commands || [])] }));
+  const renamedCategories = new Map();
+  maps.forEach((map) => {
+    const from = String(map.sourceCategory || "").trim();
+    const to = String(map.category || "").trim();
+    if (from && to && from.toLowerCase() !== to.toLowerCase()) renamedCategories.set(from.toLowerCase(), { from, to });
+  });
+  renamedCategories.forEach(({ from, to }) => {
+    const categoryIndex = categories.findIndex((category) => category.toLowerCase() === from.toLowerCase());
+    const hasTarget = categories.some((category) => category.toLowerCase() === to.toLowerCase());
+    if (categoryIndex === -1 || hasTarget) return;
+    categories[categoryIndex] = to;
+    slots.forEach((slot) => {
+      if (slot.category !== from) return;
+      slot.category = to;
+      const suffix = String(slot.slotId || "").match(new RegExp(`^${escapeRegExp(from)}(\\d+)$`, "i"))?.[1];
+      if (suffix) slot.slotId = `${to}${suffix}`;
+    });
+  });
   const nextNumbers = new Map();
   const ensureCategory = (name) => {
     if (categories.some((category) => category.toLowerCase() === name.toLowerCase())) return categories.find((category) => category.toLowerCase() === name.toLowerCase());
@@ -607,6 +618,12 @@ function importBulkMaps({ maps }) {
     else slots.push({ slotId: nextSlotId(category), category, ...value });
   });
   updateMappool(pool.id, { categories, slots });
+  toast.add({
+    severity: "success",
+    summary: "Beatmaps imported",
+    detail: `${maps.length} beatmap${maps.length === 1 ? "" : "s"} added to the mappool.`,
+    life: 4000,
+  });
 }
 function importPool(event) {
   const file = event.target.files?.[0];
