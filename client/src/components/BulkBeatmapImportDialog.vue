@@ -72,10 +72,6 @@ function close() {
   if (!processing.value) emit("update:visible", false);
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function assignments() {
   const result = [];
   let offset = 0;
@@ -147,17 +143,18 @@ async function startImport() {
   processed.value = 0;
   total.value = items.length;
   currentId.value = "";
-  const results = [];
-  for (let index = 0; index < items.length; index += 1) {
-    currentId.value = items[index].id;
-    try {
-      results.push(await parseBeatmap(Number(items[index].id)));
-    } catch {
-      results.push(null);
-    }
-    processed.value = index + 1;
-    if (index < items.length - 1) await sleep(1000);
-  }
+  const results = await Promise.all(
+    items.map(async (item) => {
+      currentId.value = item.id;
+      try {
+        return await parseBeatmap(Number(item.id));
+      } catch {
+        return null;
+      } finally {
+        processed.value += 1;
+      }
+    }),
+  );
   processing.value = false;
   currentId.value = "";
   finishImport(items, results);
