@@ -15,7 +15,18 @@ const state = ref("disconnected");
 const lastError = ref("");
 const lastEvent = ref(null);
 const loginTimeout = 10000;
+// The server may keep API requests in its rate-limit queue and retry them.
+// Keep the client from timing out before the server-side transport deadline.
+const apiRequestTimeout = 60000;
 let pendingLogin = null;
+
+export class ApiRequestError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = "ApiRequestError";
+    Object.assign(this, details);
+  }
+}
 
 function send(socketInstance, payload) {
   if (socketInstance.readyState !== WebSocket.OPEN) return false;
@@ -177,7 +188,7 @@ function requestOsu(payload) {
   });
 }
 
-function requestApi(endpoint, method = "GET", body = undefined) {
+function requestApiOnce(endpoint, method = "GET", body = undefined) {
   const { socketInstance, ownsSocket } = getRequestSocket();
 
   return new Promise((resolve, reject) => {
@@ -202,11 +213,20 @@ function requestApi(endpoint, method = "GET", body = undefined) {
         return;
       }
       if (message.type === "api_response" && message.endpoint === endpoint) finish(resolve, message.response);
-      if (message.type === "error" && message.request === "api_request") finish(reject, new Error(message.message || "Server error."));
+      if (message.type === "error" && message.request === "api_request") {
+        finish(
+          reject,
+          new ApiRequestError(message.message || "Server error.", {
+            code: message.code,
+            retryAfterMs: message.retryAfterMs,
+            outcomeUnknown: message.outcomeUnknown === true,
+          }),
+        );
+      }
     };
     const handleError = () => finish(reject, new Error("Unable to connect to the WhistleRef server."));
     const handleClose = () => finish(reject, new Error("Server connection closed."));
-    const timeoutId = setTimeout(() => finish(reject, new Error("osu! API request timed out.")), loginTimeout);
+    const timeoutId = setTimeout(() => finish(reject, new Error("osu! API request timed out.")), apiRequestTimeout);
 
     socketInstance.addEventListener("open", handleOpen);
     socketInstance.addEventListener("message", handleMessage);
@@ -214,6 +234,30 @@ function requestApi(endpoint, method = "GET", body = undefined) {
     socketInstance.addEventListener("close", handleClose);
     if (socketInstance.readyState === WebSocket.OPEN) handleOpen();
   });
+}
+
+function apiRetryDelay(error, attempt) {
+  if (!error || !["RATE_LIMITED", "RATE_LIMIT_QUEUE_FULL", "RATE_LIMIT_WAIT_TIMEOUT"].includes(error.code)) return null;
+  const serverDelay = Number(error.retryAfterMs);
+  if (Number.isFinite(serverDelay) && serverDelay >= 0) return Math.min(serverDelay, 60000);
+  return Math.min(1000 * 2 ** attempt, 5000);
+}
+
+async function requestApi(endpoint, method = "GET", body = undefined) {
+  // The server normally queues and retries these requests. If it explicitly
+  // reports that its queue/rate limit was exhausted, give it a few bounded
+  // chances instead of surfacing an instant error to the user.
+  const maxAttempts = method === "GET" ? 4 : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      return await requestApiOnce(endpoint, method, body);
+    } catch (error) {
+      const delay = apiRetryDelay(error, attempt);
+      if (delay === null || attempt + 1 >= maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error("API request failed.");
 }
 
 function setLobbyScore(channel, teamRedScore, teamBlueScore) {

@@ -1,10 +1,7 @@
 import { reactive } from "vue";
 
 const STORAGE_KEY = "whistleref-lazer-room-resource-cache-v1";
-const REQUEST_INTERVAL_MS = 180;
 const inFlight = new Map();
-let nextRequestAt = 0;
-let requestQueue = Promise.resolve();
 
 function readCache() {
   try {
@@ -39,13 +36,7 @@ function validId(value) {
 
 function schedule(key, task) {
   if (inFlight.has(key)) return inFlight.get(key);
-  const run = requestQueue.then(async () => {
-    const wait = Math.max(0, nextRequestAt - Date.now());
-    if (wait) await new Promise((resolve) => window.setTimeout(resolve, wait));
-    nextRequestAt = Date.now() + REQUEST_INTERVAL_MS;
-    return task();
-  });
-  requestQueue = run.catch(() => {});
+  const run = Promise.resolve().then(task);
   inFlight.set(key, run);
   return run.finally(() => inFlight.delete(key));
 }
