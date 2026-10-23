@@ -8,6 +8,7 @@ import Select from "primevue/select";
 import SelectButton from "primevue/selectbutton";
 import Slider from "primevue/slider";
 import ToggleSwitch from "primevue/toggleswitch";
+import { Info } from "@lucide/vue";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -38,6 +39,41 @@ const maxParticipants = ref(16);
 
 const isLazer = computed(() => mode.value === "lazer");
 const maxParticipantsLabel = computed(() => (maxParticipants.value >= 17 ? "∞" : String(maxParticipants.value)));
+
+function stripOuterParentheses(value) {
+  const text = String(value || "").trim();
+  return text.startsWith("(") && text.endsWith(")") ? text.slice(1, -1).trim() : text;
+}
+
+function parseLobbyName(value) {
+  const text = String(value || "")
+    .trim()
+    .replace(/^!mp\s+make\s+/i, "");
+  const separatorIndex = text.indexOf(":");
+  if (separatorIndex <= 0) return null;
+
+  const name = text.slice(0, separatorIndex).trim();
+  const teams = text
+    .slice(separatorIndex + 1)
+    .trim()
+    .match(/^(.+?)\s+vs\s+(.+)$/i);
+  if (!name || !teams) return null;
+
+  const red = stripOuterParentheses(teams[1]);
+  const blue = stripOuterParentheses(teams[2]);
+  return red && blue ? { name, red, blue } : null;
+}
+
+function handleLobbyPaste(event) {
+  const parsed = parseLobbyName(event.clipboardData?.getData("text"));
+  if (!parsed) return;
+
+  event.preventDefault();
+  acronym.value = parsed.name;
+  teamRed.value = parsed.red;
+  teamBlue.value = parsed.blue;
+  qualifiers.value = false;
+}
 
 const command = computed(() => {
   const name = acronym.value.trim() || "ACRONYM";
@@ -150,9 +186,17 @@ watch(
         <SelectButton v-model="mode" :options="lobbyModes" optionLabel="label" optionValue="value" :allowEmpty="false" aria-label="Lobby type" />
       </div>
 
+      <div class="create-lobby-dialog__paste-note">
+        <Info :size="15" class="create-lobby-dialog__paste-note-icon" />
+        <div class="create-lobby-dialog__paste-note-content">
+          <strong>Note</strong>
+          <span>Paste a complete lobby name into any of the three fields and the acronym and team names will be filled automatically.</span>
+        </div>
+      </div>
+
       <label class="create-lobby-dialog__field">
         <span>Tournament acronym</span>
-        <InputText v-model="acronym" placeholder="e.g. OPTC2" autofocus />
+        <InputText v-model="acronym" placeholder="e.g. OPTC2" autofocus @paste="handleLobbyPaste" />
       </label>
 
       <label class="create-lobby-dialog__field">
@@ -171,12 +215,12 @@ watch(
       <template v-if="!qualifiers">
         <label class="create-lobby-dialog__field">
           <span>Red team name</span>
-          <InputText v-model="teamRed" placeholder="e.g. Team Red" />
+          <InputText v-model="teamRed" placeholder="e.g. Team Red" @paste="handleLobbyPaste" />
         </label>
 
         <label class="create-lobby-dialog__field">
           <span>Blue team name</span>
-          <InputText v-model="teamBlue" placeholder="e.g. Team Blue" />
+          <InputText v-model="teamBlue" placeholder="e.g. Team Blue" @paste="handleLobbyPaste" />
         </label>
       </template>
 
@@ -209,7 +253,7 @@ watch(
 
         <label class="create-lobby-dialog__field">
           <span>Beatmap ID</span>
-          <InputNumber v-model="beatmapId" :min="1" :use-grouping="false" inputId="create-lobby-beatmap" />
+          <InputNumber v-model="beatmapId" :min="1" :use-grouping="false" inputId="create-lobby-beatmap" @input="({ value }) => (beatmapId = value)" />
         </label>
 
         <div class="create-lobby-dialog__field">
@@ -292,6 +336,36 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+.create-lobby-dialog__paste-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(65, 180, 255, 0.24);
+  border-radius: 0.65rem;
+  background: rgba(65, 180, 255, 0.08);
+  color: #9ddcff;
+}
+
+.create-lobby-dialog__paste-note-icon {
+  flex: 0 0 auto;
+  margin-top: 0.05rem;
+  color: #55beff;
+}
+
+.create-lobby-dialog__paste-note-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.create-lobby-dialog__paste-note-content strong {
+  color: #c5ebff;
+  font-size: 0.74rem;
 }
 
 .create-lobby-dialog__field > span {
