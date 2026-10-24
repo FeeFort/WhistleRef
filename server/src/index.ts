@@ -306,7 +306,6 @@ async function startLazerSession(): Promise<void> {
     sessionLog.separator("Session ready");
   } catch (error) {
     sessionLog.warn("Initial room sync failed", { error });
-    // TODO: Use the shared API exponential backoff policy for sync retries.
   }
 }
 
@@ -1104,6 +1103,12 @@ function validateMessage(message: unknown): string | null {
       if (!Number.isSafeInteger(message.ruleset_id) || (message.ruleset_id as number) < 0 || (message.ruleset_id as number) > 3) return "ruleset_id must be an integer from 0 to 3.";
       if (!Number.isSafeInteger(message.beatmap_id) || (message.beatmap_id as number) <= 0) return "beatmap_id must be a positive integer.";
       if (!isNonEmptyString(message.name)) return "name must be a non-empty string.";
+      if (message.match_type !== undefined && message.match_type !== "head_to_head" && message.match_type !== "team_versus") {
+        return "match_type must be head_to_head or team_versus.";
+      }
+      if (message.queue_mode !== undefined && !["host_only", "all_players", "all_players_round_robin"].includes(String(message.queue_mode))) {
+        return "queue_mode must be host_only, all_players, or all_players_round_robin.";
+      }
       if (message.max_participants !== undefined && (!Number.isSafeInteger(message.max_participants) || (message.max_participants as number) < 0))
         return "max_participants must be a non-negative integer.";
       return null;
@@ -1124,6 +1129,9 @@ function validateMessage(message: unknown): string | null {
       if (message.password !== undefined && message.password !== null && typeof message.password !== "string") return "password must be a string or null.";
       if (message.match_type !== undefined && message.match_type !== null && message.match_type !== "head_to_head" && message.match_type !== "team_versus") {
         return "match_type must be head_to_head, team_versus, or null.";
+      }
+      if (message.queue_mode !== undefined && message.queue_mode !== null && !["host_only", "all_players", "all_players_round_robin"].includes(String(message.queue_mode))) {
+        return "queue_mode must be host_only, all_players, all_players_round_robin, or null.";
       }
       if (message.max_participants !== undefined && message.max_participants !== null && (!Number.isSafeInteger(message.max_participants) || (message.max_participants as number) < 0))
         return "max_participants must be a non-negative integer or null.";

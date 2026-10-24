@@ -258,7 +258,8 @@ class RoomManager {
         room.name = e.name;
         room.password = e.password;
         room.state.type = e.type;
-        room.max_participants = e.max_participants ?? room.max_participants;
+        room.queue_mode = e.queue_mode;
+        room.max_participants = e.max_participants ?? 0;
         break;
       }
       case "MatchStateChanged": {
