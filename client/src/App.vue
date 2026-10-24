@@ -48,6 +48,7 @@ import { useNickColor } from "./composables/useNickColor";
 import { clearRememberedCredentials, loadRememberedCredentials, loadOsuAuthData, saveRememberedCredentials, saveOsuAuthData } from "./composables/useRememberedCredentials";
 import { getOsuRedirectUri, readOsuAuthorizationCallback, startOsuAuthorization } from "./composables/useOsuOAuth";
 import { useServerConnection } from "./composables/useServerConnection";
+import { formatBeatmapOwners } from "./composables/useBeatmapAuthors";
 import { clearLazerRoomResourceCache, getLazerCachedProfile, loadLazerCachedBeatmap, loadLazerCachedProfile, loadLazerCachedProfileByUsername } from "./composables/useLazerRoomResourceCache";
 import { formatLobbyTemplate, useLobbyMessages } from "./composables/useLobbyMessages";
 import { sortMappoolSlots, useMappool } from "./composables/useMappool";
@@ -2990,15 +2991,7 @@ async function loadManualNowPlayingMap(chatId, beatmap) {
   }
   try {
     const info = await requestApi(`/beatmaps/${beatmapId}`);
-    let mapperName = typeof info.creator === "string" ? info.creator : info.creator?.username || "";
-    if (!mapperName && info.user_id != null) {
-      try {
-        const mapper = await requestApi(`/users/${info.user_id}`);
-        mapperName = mapper.username || mapper.name || "";
-      } catch {
-        // The map itself is still usable when the optional mapper lookup fails.
-      }
-    }
+    const mapperName = formatBeatmapOwners(info);
     const nextMap = {
       ...beatmap,
       title: info.title || info.beatmapset?.title || "Unknown title",

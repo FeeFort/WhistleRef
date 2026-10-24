@@ -7,6 +7,7 @@ import ProgressBar from "primevue/progressbar";
 import { Plus, RefreshCw, Trash2, Upload } from "@lucide/vue";
 import { useToast } from "primevue/usetoast";
 import { useServerConnection } from "../composables/useServerConnection";
+import { formatBeatmapOwners } from "../composables/useBeatmapAuthors";
 
 const props = defineProps({ visible: Boolean, pool: { type: Object, default: null } });
 const emit = defineEmits(["update:visible", "import"]);
@@ -17,7 +18,6 @@ const rows = ref([]);
 const processing = ref(false);
 const processed = ref(0);
 const total = ref(0);
-const currentId = ref("");
 
 const ids = computed(() => {
   const seen = new Set();
@@ -48,9 +48,8 @@ function reset(pool) {
   source.value = "";
   processed.value = 0;
   total.value = 0;
-  currentId.value = "";
-  rows.value = (pool?.categories || []).map((name) => ({ name, count: 0 }));
-  if (!rows.value.length) rows.value.push({ name: "", count: 0 });
+  rows.value = (pool?.categories || []).map((name) => ({ name, originalName: name, count: 0 }));
+  if (!rows.value.length) rows.value.push({ name: "", originalName: null, count: 0 });
 }
 
 watch(
@@ -61,7 +60,7 @@ watch(
 );
 
 function addRow() {
-  rows.value.push({ name: "", count: 0 });
+  rows.value.push({ name: "", originalName: null, count: 0 });
 }
 
 function removeRow(index) {
@@ -77,7 +76,9 @@ function assignments() {
   let offset = 0;
   rows.value.forEach((row) => {
     const count = Number.parseInt(row.count, 10) || 0;
-    for (let index = 0; index < count; index += 1) result.push({ id: ids.value[offset++], category: row.name.trim() });
+    for (let index = 0; index < count; index += 1) {
+      result.push({ id: ids.value[offset++], category: row.name.trim(), sourceCategory: row.originalName });
+    }
   });
   return result;
 }
@@ -88,7 +89,7 @@ function makePreview(id, info) {
     artist: info.artist || info.beatmapset?.artist || "",
     title: info.title || info.beatmapset?.title || info.name || "",
     diff: info.version || "",
-    author: typeof info.creator === "string" ? info.creator : info.creator?.username || "",
+    author: formatBeatmapOwners(info),
     beatmapsetId: info.beatmapset_id || info.beatmapset?.id || null,
     starRating: info.difficulty_rating ?? null,
     totalSeconds: info.total_length ?? null,
@@ -97,16 +98,7 @@ function makePreview(id, info) {
 
 async function parseBeatmap(id) {
   const info = await requestApi(`/beatmaps/${id}`);
-  const preview = makePreview(id, info);
-  if (!preview.author && info.user_id != null) {
-    try {
-      const mapper = await requestApi(`/users/${info.user_id}`);
-      preview.author = mapper.username || mapper.name || "";
-    } catch {
-      return preview;
-    }
-  }
-  return preview;
+  return makePreview(id, info);
 }
 
 function finishImport(items, results) {
@@ -142,10 +134,8 @@ async function startImport() {
   processing.value = true;
   processed.value = 0;
   total.value = items.length;
-  currentId.value = "";
   const results = await Promise.all(
     items.map(async (item) => {
-      currentId.value = item.id;
       try {
         return await parseBeatmap(Number(item.id));
       } catch {
@@ -156,7 +146,6 @@ async function startImport() {
     }),
   );
   processing.value = false;
-  currentId.value = "";
   finishImport(items, results);
 }
 </script>
@@ -184,7 +173,6 @@ async function startImport() {
         <span>{{ processed }} of {{ total }} beatmaps</span><strong>{{ progress }}%</strong>
       </div>
       <ProgressBar :value="progress" :show-value="false" class="bulk-import-dialog__progress" />
-      <p class="bulk-import-dialog__download-meta">Current beatmap: {{ currentId }}</p>
     </div>
     <div v-else class="bulk-import-dialog__content">
       <p class="bulk-import-dialog__subtitle">Paste beatmap IDs separated by commas, spaces, or new lines.</p>
