@@ -34,11 +34,22 @@ const qualifiers = ref(false);
 const bestOf = ref(13);
 const includeParentheses = ref(true);
 const rulesetId = ref(0);
+const matchType = ref("team_versus");
+const queueMode = ref("host_only");
 const beatmapId = ref(null);
 const maxParticipants = ref(16);
 
 const isLazer = computed(() => mode.value === "lazer");
 const maxParticipantsLabel = computed(() => (maxParticipants.value >= 17 ? "∞" : String(maxParticipants.value)));
+const matchTypeOptions = [
+  { label: "HeadToHead", value: "head_to_head" },
+  { label: "Team VS", value: "team_versus" },
+];
+const queueModeOptions = [
+  { label: "Host only", value: "host_only" },
+  { label: "All players", value: "all_players" },
+  { label: "All players (round robin)", value: "all_players_round_robin" },
+];
 
 function stripOuterParentheses(value) {
   const text = String(value || "").trim();
@@ -98,7 +109,7 @@ const commonLobbyIsValid = computed(() => {
 
 const isValid = computed(() => {
   if (isLazer.value) {
-    return commonLobbyIsValid.value && Number.isInteger(Number(beatmapId.value)) && Number(beatmapId.value) > 0 && Number.isInteger(Number(maxParticipants.value)) && Number(maxParticipants.value) > 0;
+    return commonLobbyIsValid.value && Number.isInteger(Number(beatmapId.value)) && Number(beatmapId.value) > 0 && Number.isInteger(Number(maxParticipants.value)) && Number(maxParticipants.value) >= 2;
   }
   return commonLobbyIsValid.value;
 });
@@ -117,6 +128,8 @@ function create() {
         ruleset_id: Number(rulesetId.value),
         beatmap_id: Number(beatmapId.value),
         name: lobbyName.value,
+        match_type: matchType.value,
+        queue_mode: queueMode.value,
         max_participants: maxParticipants.value >= 17 ? 0 : Number(maxParticipants.value),
       },
       lobby: {
@@ -158,6 +171,8 @@ function resetForm() {
   bestOf.value = 13;
   includeParentheses.value = true;
   rulesetId.value = 0;
+  matchType.value = "team_versus";
+  queueMode.value = "host_only";
   beatmapId.value = null;
   maxParticipants.value = 16;
 }
@@ -229,14 +244,6 @@ watch(
         <InputText v-model="qualifiersLobby" placeholder="e.g. 12345678" />
       </label>
 
-      <div class="create-lobby-dialog__toggle-row">
-        <div>
-          <strong>Include names in parentheses</strong>
-          <span>Wrap teams and lobby labels in parentheses.</span>
-        </div>
-        <ToggleSwitch v-model="includeParentheses" class="app-solid-switch" />
-      </div>
-
       <template v-if="isLazer">
         <label class="create-lobby-dialog__field">
           <span>Ruleset</span>
@@ -252,6 +259,16 @@ watch(
         </label>
 
         <label class="create-lobby-dialog__field">
+          <span>Match type</span>
+          <SelectButton v-model="matchType" :options="matchTypeOptions" optionLabel="label" optionValue="value" :allowEmpty="false" aria-label="Match type" />
+        </label>
+
+        <label class="create-lobby-dialog__field">
+          <span>Queue mode</span>
+          <SelectButton v-model="queueMode" :options="queueModeOptions" optionLabel="label" optionValue="value" :allowEmpty="false" aria-label="Queue mode" />
+        </label>
+
+        <label class="create-lobby-dialog__field">
           <span>Beatmap ID</span>
           <InputNumber v-model="beatmapId" :min="1" :use-grouping="false" inputId="create-lobby-beatmap" @input="({ value }) => (beatmapId = value)" />
         </label>
@@ -261,11 +278,19 @@ watch(
             <span>Max participants</span><strong>{{ maxParticipantsLabel }}</strong>
           </div>
           <div class="create-lobby-dialog__slider-wrap">
-            <Slider v-model="maxParticipants" :min="1" :max="17" :step="1" aria-label="Max participants" />
+        <Slider v-model="maxParticipants" :min="2" :max="17" :step="1" aria-label="Max participants" />
           </div>
-          <div class="create-lobby-dialog__slider-range"><span>1</span><span>∞</span></div>
+          <div class="create-lobby-dialog__slider-range"><span>2</span><span>∞</span></div>
         </div>
       </template>
+
+      <div class="create-lobby-dialog__toggle-row">
+        <div>
+          <strong>Include names in parentheses</strong>
+          <span>Wrap teams and lobby labels in parentheses.</span>
+        </div>
+        <ToggleSwitch v-model="includeParentheses" class="app-solid-switch" />
+      </div>
 
       <div class="create-lobby-dialog__preview">
         <span>Lobby preview</span>
@@ -336,6 +361,31 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+.create-lobby-dialog__field :deep(.p-selectbutton) {
+  display: flex;
+  width: 100%;
+}
+
+.create-lobby-dialog__field :deep(.p-selectbutton .p-togglebutton) {
+  flex: 1 1 0;
+  min-width: 0;
+  border-color: var(--app-border) !important;
+  background: var(--app-control) !important;
+  color: var(--app-muted) !important;
+  font-size: 0.74rem;
+}
+
+.create-lobby-dialog__field :deep(.p-selectbutton .p-togglebutton .p-togglebutton-content) {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.create-lobby-dialog__field :deep(.p-selectbutton .p-togglebutton.p-togglebutton-checked) {
+  border-color: rgba(var(--app-primary-rgb), 0.5) !important;
+  background: rgba(var(--app-primary-rgb), 0.16) !important;
+  color: var(--app-primary-bright) !important;
 }
 
 .create-lobby-dialog__paste-note {

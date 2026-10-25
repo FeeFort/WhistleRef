@@ -9,10 +9,12 @@ const props = defineProps({
   visible: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
+  initialQueueMode: { type: String, default: "host_only" },
   initialMatchType: { type: String, default: "team_versus" },
   initialMaxParticipants: { type: Number, default: null },
 });
 const emit = defineEmits(["update:visible", "send"]);
+const queueMode = ref("host_only");
 const matchType = ref("team_versus");
 const maxParticipants = ref(16);
 const maxParticipantsLabel = computed(() => (maxParticipants.value >= 17 ? "∞" : String(maxParticipants.value)));
@@ -20,10 +22,16 @@ const gameModeOptions = [
   { label: "HeadToHead", value: "head_to_head" },
   { label: "Team VS", value: "team_versus" },
 ];
+const queueModeOptions = [
+  { label: "Host only", value: "host_only" },
+  { label: "All players", value: "all_players" },
+  { label: "All players (round robin)", value: "all_players_round_robin" },
+];
 function reset() {
+  queueMode.value = ["host_only", "all_players", "all_players_round_robin"].includes(props.initialQueueMode) ? props.initialQueueMode : "host_only";
   matchType.value = ["head_to_head", "team_versus"].includes(props.initialMatchType) ? props.initialMatchType : "team_versus";
   const initialMaxParticipants = Number(props.initialMaxParticipants);
-  maxParticipants.value = !Number.isFinite(initialMaxParticipants) || initialMaxParticipants <= 0 ? 17 : Math.min(17, Math.max(1, initialMaxParticipants));
+  maxParticipants.value = !Number.isFinite(initialMaxParticipants) || initialMaxParticipants <= 0 ? 17 : Math.min(17, Math.max(2, initialMaxParticipants));
 }
 function close() {
   emit("update:visible", false);
@@ -31,6 +39,7 @@ function close() {
 function send() {
   if (props.disabled || props.loading) return;
   emit("send", {
+    queue_mode: queueMode.value,
     match_type: matchType.value,
     max_participants: maxParticipants.value >= 17 ? 0 : maxParticipants.value,
   });
@@ -57,6 +66,10 @@ watch(
   >
     <div class="lobby-setup-dialog__body">
       <label class="lobby-setup-dialog__field">
+        <span>Queue mode</span>
+        <SelectButton v-model="queueMode" :options="queueModeOptions" optionLabel="label" optionValue="value" :allowEmpty="false" :disabled="disabled || loading" />
+      </label>
+      <label class="lobby-setup-dialog__field">
         <span>Game mode</span>
         <SelectButton v-model="matchType" :options="gameModeOptions" optionLabel="label" optionValue="value" :allowEmpty="false" :disabled="disabled || loading" />
       </label>
@@ -65,9 +78,9 @@ watch(
           <span>Max participants</span><strong>{{ maxParticipantsLabel }}</strong>
         </div>
         <div class="lobby-setup-dialog__slider-wrap">
-          <Slider v-model="maxParticipants" :min="1" :max="17" :step="1" :disabled="disabled || loading" />
+          <Slider v-model="maxParticipants" :min="2" :max="17" :step="1" :disabled="disabled || loading" />
         </div>
-        <div class="lobby-setup-dialog__slider-range"><span>1</span><span>∞</span></div>
+        <div class="lobby-setup-dialog__slider-range"><span>2</span><span>∞</span></div>
       </div>
     </div>
     <template #footer>
