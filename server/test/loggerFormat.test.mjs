@@ -58,7 +58,7 @@ test("error stacks appear only when the active logging level is TRACE", () => {
 });
 
 test("normal logs use the chosen prefix and one separator", () => {
-  assert.equal(render(), "[12:35:10.087] ■ DEBUG stable/irc        ┃ Connected\n");
+  assert.equal(render(), "[12:35:10.087] ■ DEBUG stable/irc          ┃ Connected\n");
 });
 
 test("scope columns align roomManager with shorter components across levels", () => {

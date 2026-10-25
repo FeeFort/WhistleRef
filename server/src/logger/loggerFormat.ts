@@ -145,7 +145,7 @@ function formatRecord(record: LogRecord, options: LogFormatOptions): string {
 
   const scopeColor = scope === "lazer" ? "95" : scope === "stable" ? "38;5;208" : "90";
   const context = `${scope}/${component}`;
-  let prefix = `${paint(`[${time}]`, "90", colors)} ${paint(pad(level, 7), `1;${levelColors[record.level]}`, colors)} ${paint(scope, scopeColor, colors)}${paint(`/${component}`, "90", colors)}${" ".repeat(Math.max(0, 17 - stringWidth(context)))} `;
+  let prefix = `${paint(`[${time}]`, "90", colors)} ${paint(pad(level, 7), `1;${levelColors[record.level]}`, colors)} ${paint(scope, scopeColor, colors)}${paint(`/${component}`, "90", colors)}${" ".repeat(Math.max(0, 19 - stringWidth(context)))} `;
   // Shorten the prefix when little space remains for the message
   if (columns !== undefined && columns - stringWidth(prefix) - 2 < 12) prefix = `${paint(level, `1;${levelColors[record.level]}`, colors)} ${paint(scope, scopeColor, colors)} `;
   if (columns !== undefined && columns - stringWidth(prefix) - 2 < 4) prefix = "";
