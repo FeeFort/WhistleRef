@@ -680,6 +680,21 @@ watch(
       const room = registerLazerRoom(event.result);
       const seed = pendingLazerLobbySeed.value;
       pendingLazerLobbySeed.value = null;
+      if (room && seed?.lazerSettings) {
+        const requested = {
+          match_type: seed.lazerSettings.match_type,
+          queue_mode: seed.lazerSettings.queue_mode,
+          max_participants: seed.lazerSettings.max_participants,
+        };
+        const roomMaxParticipants = Number(room.max_participants ?? 0);
+        const requestedMaxParticipants = Number(requested.max_participants ?? 0);
+        const settingsDiffer =
+          (requested.match_type && room.state?.type !== requested.match_type) || (requested.queue_mode && room.queue_mode !== requested.queue_mode) || roomMaxParticipants !== requestedMaxParticipants;
+        if (settingsDiffer) {
+          // TODO: Remove this fallback after referee hub MakeRoom settings support is deployed.
+          changeLazerRoomSettings(Number(room.room_id), requested);
+        }
+      }
       if (room && seed) {
         const lobby = lazerLobbyStates[room.id];
         if (lobby) {
@@ -738,6 +753,7 @@ watch(
       if (pendingRoom && Number(pendingRoom.room_id) === pendingSettings.roomId) {
         pendingRoom.max_participants = pendingSettings.maxParticipants;
         if (pendingSettings.matchType) pendingRoom.state = { ...pendingRoom.state, type: pendingSettings.matchType };
+        if (pendingSettings.queueMode) pendingRoom.queue_mode = pendingSettings.queueMode;
       }
       pendingLazerLobbySettings.value = null;
       lazerLobbySetupLoading.value = false;
@@ -3500,9 +3516,11 @@ function applyLazerLobbySetup(settings) {
   const roomId = Number(activeLazerRoom.value.room_id);
   const maxParticipants = Number(settings.max_participants);
   const matchType = settings.match_type;
-  pendingLazerLobbySettings.value = { roomId, maxParticipants, matchType };
+  const queueMode = settings.queue_mode;
+  pendingLazerLobbySettings.value = { roomId, maxParticipants, matchType, queueMode };
   lazerLobbySetupLoading.value = true;
   const sent = changeLazerRoomSettings(roomId, {
+    queue_mode: queueMode,
     match_type: matchType,
     max_participants: maxParticipants,
   });
@@ -3537,7 +3555,7 @@ function handleCommand(command) {
 
 function handleCreateLobby(payload) {
   if (payload.mode === "lazer") {
-    pendingLazerLobbySeed.value = payload.lobby || null;
+    pendingLazerLobbySeed.value = payload.lobby ? { ...payload.lobby, lazerSettings: payload.lazer } : null;
     if (!makeLazerRoom(payload.lazer)) pendingLazerLobbySeed.value = null;
     return;
   }
@@ -4666,6 +4684,7 @@ function handleLazerSendResult(result) {
         v-model:visible="lobbySetupDialogOpen"
         :disabled="Boolean(activeLazerRoom?.closed)"
         :loading="lazerLobbySetupLoading"
+        :initial-queue-mode="activeLazerRoom?.queue_mode || 'host_only'"
         :initial-match-type="activeLazerRoom?.state?.type || 'team_versus'"
         :initial-max-participants="activeLazerRoom?.max_participants ?? null"
         @send="applyLazerLobbySetup"

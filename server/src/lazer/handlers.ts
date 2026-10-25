@@ -32,6 +32,8 @@ export async function handleLazerMakeRoom(client: WebSocket, message: ClientMess
       ruleset_id: m.ruleset_id,
       beatmap_id: m.beatmap_id,
       name: m.name,
+      type: m.match_type,
+      queue_mode: m.queue_mode,
       max_participants: m.max_participants,
     });
     await ack(client, message, room);
@@ -159,6 +161,7 @@ export async function handleLazerChangeRoomSettings(client: WebSocket, message: 
       name: m.name,
       password: m.password,
       type: m.match_type,
+      queue_mode: m.queue_mode,
       max_participants: m.max_participants,
     });
     await ack(client, message);

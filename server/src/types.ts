@@ -299,7 +299,15 @@ export type ClientCommand =
   | { type: "cancel_update" }
   | { type: "confirm_install" }
   | { type: "test_win_condition"; slotId: string; source: string; sampleContext: Record<string, unknown> }
-  | ({ type: "lazer_make_room" } & MakeRoomRequest)
+  | {
+      type: "lazer_make_room";
+      ruleset_id: number;
+      beatmap_id: number;
+      name: string;
+      match_type?: MatchType;
+      queue_mode?: QueueMode;
+      max_participants?: number;
+    }
   | { type: "lazer_load_chat"; room_id: number }
   | { type: "lazer_join_room"; room_id: number }
   | { type: "lazer_leave_room"; room_id: number }
@@ -538,6 +546,7 @@ export type RoomRemovedListener = (roomId: number) => void;
 
 export type MatchType = "head_to_head" | "team_versus";
 export type MatchTeam = "red" | "blue";
+export type QueueMode = "host_only" | "all_players" | "all_players_round_robin";
 export type MatchUserStatus = "idle" | "ready" | "playing" | "finished_play" | "spectating";
 export type CountdownType = "match_start" | "server_shutting_down";
 
@@ -552,6 +561,8 @@ export interface MakeRoomRequest {
   ruleset_id: number;
   beatmap_id: number;
   name: string;
+  type?: MatchType;
+  queue_mode?: QueueMode;
   max_participants?: number;
 }
 
@@ -559,6 +570,7 @@ export interface ChangeRoomSettingsRequest {
   name?: string | null;
   password?: string | null;
   match_type?: MatchType | null;
+  queue_mode?: QueueMode | null;
   max_participants?: number | null;
 }
 
@@ -648,6 +660,7 @@ export interface RoomJoinedResponse {
   name: string;
   password: string;
   max_participants: number;
+  queue_mode: QueueMode;
   state: LazerMatchState;
   playlist: LazerPlaylistItem[];
   players: LazerPlayer[];
@@ -676,6 +689,7 @@ export interface RoomSettingsChangedEvent {
   name: string;
   password: string;
   type: MatchType;
+  queue_mode: QueueMode;
   playlist_item_id: number;
   max_participants: number | null;
 }

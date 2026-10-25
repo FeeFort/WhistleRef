@@ -40,6 +40,7 @@ export function isHubPayload(eventType: HubEventType, value: unknown): value is 
   const integer = (v: unknown) => Number.isSafeInteger(v) && Number(v) >= 0;
   const nullableId = (v: unknown) => v === null || id(v);
   const matchType = (v: unknown) => v === "head_to_head" || v === "team_versus";
+  const queueMode = (v: unknown) => v === "host_only" || v === "all_players" || v === "all_players_round_robin";
   const team = (v: unknown) => v === "red" || v === "blue";
   const mods = (v: unknown) => Array.isArray(v) && v.every((m) => object(m) && typeof m.acronym === "string" && (m.settings === undefined || object(m.settings)));
   const item = (v: unknown) =>
@@ -71,6 +72,7 @@ export function isHubPayload(eventType: HubEventType, value: unknown): value is 
         typeof value.name === "string" &&
         typeof value.password === "string" &&
         matchType(value.type) &&
+        queueMode(value.queue_mode) &&
         id(value.playlist_item_id) &&
         (value.max_participants === null || integer(value.max_participants))
       );
@@ -132,6 +134,7 @@ export function isHubResponse(methodName: string, value: unknown): boolean {
     !Number.isSafeInteger(response.max_participants) ||
     Number(response.max_participants) < 0 ||
     Number(response.max_participants) > 255 ||
+    !["host_only", "all_players", "all_players_round_robin"].includes(String(response.queue_mode)) ||
     !isHubPayload("MatchStateChanged", { room_id: response.room_id, state: response.state })
   )
     return false;
