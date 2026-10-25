@@ -162,6 +162,7 @@ const {
   editLazerCurrentPlaylistItem,
   sendLazerChatMessage,
   rollLazer,
+  leaveLazerRoom,
   changeLazerRoomSettings,
   loadLazerChat,
   addLazerReferee,
@@ -418,6 +419,8 @@ const chatSettingChanged = computed(() => ({
 watch(
   lastEvent,
   (event) => {
+    if (handleLazerError(event)) return;
+
     const legacyCommand = event?.requestId ? pendingLazerLegacyCommands.get(event.requestId) : null;
     if (legacyCommand && ((event.type === "ack" && event.received === legacyCommand.type) || (event.type === "error" && event.request === legacyCommand.type))) {
       pendingLazerLegacyCommands.delete(event.requestId);
@@ -443,17 +446,6 @@ watch(
       return;
     }
 
-    if (event?.type === "error" && event.request === "lazer_send_chat_message") {
-      const pending = pendingLazerMessages.shift();
-      if (pending) {
-        const list = channelMessages[pending.chatId] || [];
-        const index = list.findIndex((item) => item.id === pending.messageId);
-        if (index !== -1) list.splice(index, 1);
-      }
-      toast.add({ severity: "error", summary: "Message failed", detail: formatLazerWsError(event.message, "The server rejected the message."), life: 5000 });
-      return;
-    }
-
     if (event?.type === "lazer_chat_message") {
       appendLazerChatMessage(event.roomId, event.message, event.users, true);
       return;
@@ -471,11 +463,6 @@ watch(
 
     if (event?.type === "lazer_sync_state") {
       lazerSyncState.value = event.state || "idle";
-      return;
-    }
-
-    if (event?.type === "lazer_room_error") {
-      toast.add({ severity: "error", summary: "Lazer room sync failed", detail: formatLazerWsError(event.message, "Unable to synchronize the lazer room."), life: 5000 });
       return;
     }
 
@@ -647,11 +634,6 @@ watch(
       return;
     }
 
-    if (event?.type === "error" && event.request === "lazer_roll") {
-      toast.add({ severity: "error", summary: "Roll failed", detail: formatLazerWsError(event.message, "The server rejected the roll."), life: 5000 });
-      return;
-    }
-
     if (event?.type === "lazer_room_state" && event.room) {
       const invitedRoomId = Number(event.room.room_id ?? event.room.roomId ?? event.room_id ?? event.roomId);
       const refereeInvited = event.refereeInvited === true || event.referee_invited === true || event.room.refereeInvited === true || event.room.referee_invited === true;
@@ -712,10 +694,6 @@ watch(
       return;
     }
 
-    if (event?.type === "error" && event.request === "lazer_make_room") {
-      pendingLazerLobbySeed.value = null;
-    }
-
     if (event?.type === "lazer_rooms" && Array.isArray(event.roomIds)) {
       const roomIds = new Set(event.roomIds.map(Number));
       for (const room of Object.values(lazerRooms)) {
@@ -736,16 +714,6 @@ watch(
       return;
     }
 
-    if (event?.type === "error" && event.request === "lazer_join_room" && pendingJoinChannel.value?.type === "lazer") {
-      failPendingJoin("You are not a referee in the specified room.");
-      return;
-    }
-
-    if (event?.type === "error" && event.request === "lazer_join_room") {
-      const roomId = Number(event.room_id ?? event.roomId);
-      if (Number.isInteger(roomId)) pendingLazerInviteJoins.delete(roomId);
-    }
-
     if (event?.type === "ack" && event.received === "lazer_change_room_settings" && lazerLobbySetupLoading.value) {
       const pendingSettings = pendingLazerLobbySettings.value;
       const pendingRoom = pendingSettings && lazerRooms[lazerChatId(pendingSettings.roomId)];
@@ -762,18 +730,6 @@ watch(
         summary: "Lobby updated",
         detail: "Lazer lobby settings applied successfully.",
         life: 3500,
-      });
-      return;
-    }
-
-    if (event?.type === "error" && lazerLobbySetupLoading.value) {
-      pendingLazerLobbySettings.value = null;
-      lazerLobbySetupLoading.value = false;
-      toast.add({
-        severity: "error",
-        summary: "Update failed",
-        detail: formatLazerWsError(event.message, "Unable to apply lazer lobby settings."),
-        life: 5000,
       });
       return;
     }
@@ -868,27 +824,6 @@ watch(
       }
 
       markRoomClosed(partedChannelId);
-      return;
-    }
-
-    if (event?.type === "error") {
-      const operation =
-        {
-          lazer_add_playlist_item: "Add map failed",
-          lazer_edit_playlist_item: "Update map failed",
-          lazer_edit_current_playlist_item: "Update map failed",
-          lazer_remove_playlist_item: "Remove map failed",
-          lazer_close_room: "Close room failed",
-          lazer_start_match: "Start match failed",
-          lazer_stop_match_countdown: "Stop countdown failed",
-          lazer_abort_match: "Abort match failed",
-          lazer_set_lock_state: "Update room lock failed",
-          lazer_move_user: "Move player failed",
-          lazer_kick_player: "Kick player failed",
-          lazer_invite_player: "Invite failed",
-          lazer_load_chat: "Chat history failed",
-        }[event.request] || "Request failed";
-      toast.add({ severity: "error", summary: operation, detail: formatLazerWsError(event.message, "The server rejected the request."), life: 5000 });
       return;
     }
 
@@ -1483,13 +1418,90 @@ function formatLazerWsError(message, fallback = "The server rejected the request
   const text = String(message || "").trim();
   if (!text) return fallback;
 
-  const refereeDetail = text.match(/RefereeHubException:\s*(?:Error\s+\d+\s*:\s*)?(.+?)(?:\s*$)/is);
-  if (refereeDetail?.[1]) return refereeDetail[1].trim();
+  let detail = text
+    .replace(/^.*?RefereeHubException:\s*/is, "")
+    .replace(/^\s*Error\s+\d+\s*:\s*/i, "")
+    .trim();
+  const invokeFailure = detail.match(/^Failed to invoke ['\"].*?['\"] due to an error on the server\.\s*(.*)$/is);
+  if (invokeFailure?.[1]) detail = invokeFailure[1].trim();
+  detail = detail
+    .replace(/^(?:HubException|Exception|Error):\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return detail || fallback;
+}
 
-  const numberedDetail = text.match(/(?:^|\n)\s*Error\s+\d+\s*:\s*(.+?)(?:\s*$)/is);
-  if (numberedDetail?.[1]) return numberedDetail[1].trim();
+function lazerErrorSummary(request) {
+  return (
+    {
+      lazer_make_room: "Create room failed",
+      lazer_join_room: "Join room failed",
+      lazer_leave_room: "Leave room failed",
+      lazer_load_chat: "Chat history failed",
+      lazer_send_chat_message: "Message failed",
+      lazer_change_room_settings: "Update room failed",
+      lazer_add_playlist_item: "Add map failed",
+      lazer_edit_playlist_item: "Update map failed",
+      lazer_edit_current_playlist_item: "Update map failed",
+      lazer_remove_playlist_item: "Remove map failed",
+      lazer_close_room: "Close room failed",
+      lazer_start_match: "Start match failed",
+      lazer_stop_match_countdown: "Stop countdown failed",
+      lazer_abort_match: "Abort match failed",
+      lazer_set_lock_state: "Update room lock failed",
+      lazer_move_user: "Move player failed",
+      lazer_kick_player: "Kick player failed",
+      lazer_invite_player: "Invite failed",
+      lazer_ban_user: "Ban failed",
+      lazer_add_referee: "Add referee failed",
+      lazer_remove_referee: "Remove referee failed",
+      lazer_roll: "Roll failed",
+    }[request] || "Request failed"
+  );
+}
 
-  return text;
+function handleLazerError(event) {
+  if (!event || (event.type !== "error" && event.type !== "lazer_room_error")) return false;
+
+  const request = event.request;
+  const isRoomError = event.type === "lazer_room_error";
+  const isLazerRequest = typeof request === "string" && request.startsWith("lazer_");
+  if (!isRoomError && !isLazerRequest) return false;
+
+  const legacyCommand = event.requestId ? pendingLazerLegacyCommands.get(event.requestId) : null;
+  if (legacyCommand) {
+    pendingLazerLegacyCommands.delete(event.requestId);
+    if (legacyCommand.timeoutId) window.clearTimeout(legacyCommand.timeoutId);
+    appendWhistleBotMessage(legacyCommand.roomId, formatLazerWsError(event.message, legacyCommand.failure));
+    return true;
+  }
+
+  if (request === "lazer_send_chat_message") {
+    const pending = pendingLazerMessages.shift();
+    if (pending) {
+      const list = channelMessages[pending.chatId] || [];
+      const index = list.findIndex((item) => item.id === pending.messageId);
+      if (index !== -1) list.splice(index, 1);
+    }
+  }
+  if (request === "lazer_make_room") pendingLazerLobbySeed.value = null;
+  if (request === "lazer_join_room") {
+    if (pendingJoinChannel.value?.type === "lazer") clearPendingJoin();
+    const roomId = Number(event.room_id ?? event.roomId);
+    if (Number.isInteger(roomId)) pendingLazerInviteJoins.delete(roomId);
+  }
+  if (request === "lazer_change_room_settings") {
+    pendingLazerLobbySettings.value = null;
+    lazerLobbySetupLoading.value = false;
+  }
+
+  toast.add({
+    severity: "error",
+    summary: isRoomError ? "Lazer room sync failed" : lazerErrorSummary(request),
+    detail: formatLazerWsError(event.message, "The Lazer request could not be completed."),
+    life: 5000,
+  });
+  return true;
 }
 
 function normalizeLazerChatMessage(message, users = []) {
@@ -3211,6 +3223,7 @@ function closeActiveChat(chatId = activeChat.value) {
 
   const lazerRoom = lazerRooms[chatId];
   if (lazerRoom) {
+    leaveLazerRoom(lazerRoom.room_id);
     delete lazerStyleChangedUsers[Number(lazerRoom.room_id)];
     for (const key of Object.keys(lazerStyleBeatmaps)) {
       if (key.startsWith(`${lazerRoom.room_id}:`)) delete lazerStyleBeatmaps[key];
