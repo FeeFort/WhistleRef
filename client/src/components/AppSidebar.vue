@@ -149,7 +149,14 @@ const profileMenuItems = computed(() => [
                       <X :size="11" />
                     </button>
                   </SidebarMenuItem>
-                  <SidebarMenuItem v-for="room in lazerRooms" :key="room.id" class="app-sidebar__chat-item">
+                  <SidebarMenuItem
+                    v-for="room in lazerRooms"
+                    :key="room.id"
+                    class="app-sidebar__chat-item"
+                    :class="{
+                      'app-sidebar__chat-item--closed': room.closed,
+                    }"
+                  >
                     <SidebarMenuButton :isActive="activeChat === room.id" @click="emit('select-chat', room.id)">
                       <MessageSquare :size="15" />
                       <span class="app-sidebar__chat-label-group">

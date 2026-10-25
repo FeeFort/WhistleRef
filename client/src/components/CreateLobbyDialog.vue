@@ -190,7 +190,7 @@ watch(
         <Info :size="15" class="create-lobby-dialog__paste-note-icon" />
         <div class="create-lobby-dialog__paste-note-content">
           <strong>Note</strong>
-          <span>Paste a complete lobby name into any of the three fields and the acronym and team names will be filled automatically.</span>
+          <span>Paste an <code>Acronym: (Red) vs (Blue)</code> or <code>!mp make</code> command into any of these fields and they will be filled automatically.</span>
         </div>
       </div>
 
@@ -366,6 +366,14 @@ watch(
 .create-lobby-dialog__paste-note-content strong {
   color: #c5ebff;
   font-size: 0.74rem;
+}
+
+.create-lobby-dialog__paste-note-content code {
+  padding: 0.08rem 0.3rem;
+  border: 1px solid rgba(157, 220, 255, 0.2);
+  border-radius: 0.28rem;
+  background: rgba(7, 9, 16, 0.34);
+  color: #e5f7ff;
 }
 
 .create-lobby-dialog__field > span {
