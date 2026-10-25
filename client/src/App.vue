@@ -162,7 +162,6 @@ const {
   editLazerCurrentPlaylistItem,
   sendLazerChatMessage,
   rollLazer,
-  leaveLazerRoom,
   changeLazerRoomSettings,
   loadLazerChat,
   addLazerReferee,
@@ -3210,7 +3209,6 @@ function closeActiveChat(chatId = activeChat.value) {
 
   const lazerRoom = lazerRooms[chatId];
   if (lazerRoom) {
-    leaveLazerRoom(lazerRoom.room_id);
     delete lazerStyleChangedUsers[Number(lazerRoom.room_id)];
     for (const key of Object.keys(lazerStyleBeatmaps)) {
       if (key.startsWith(`${lazerRoom.room_id}:`)) delete lazerStyleBeatmaps[key];
