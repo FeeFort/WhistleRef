@@ -1090,8 +1090,13 @@ html.app-light .app-dialog-mask {
 }
 .app-tooltip__conflicts {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+.app-tooltip__conflict {
+  display: inline-flex;
+  align-items: center;
 }
 .app-tooltip__conflict-icon {
   display: inline-flex;
@@ -1173,6 +1178,10 @@ html.app-light .app-dialog-mask {
 
 .app-tooltip--visible {
   opacity: 1;
+}
+
+.app-tooltip--dynamic::after {
+  display: none;
 }
 
 .app-tooltip::after {

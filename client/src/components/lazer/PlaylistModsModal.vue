@@ -69,18 +69,39 @@ const pickerCategories = computed(() =>
     .map((category) => ({
       ...category,
       mods: category.mods.filter((mod) =>
-        pickerKind.value === "required" ? (freestyle.value ? mod.ValidForFreestyleAsRequiredMod === true : mod.ValidForMultiplayer === true) : mod.ValidForMultiplayerAsFreeMod === true,
+        pickerKind.value === "required"
+          ? freestyle.value
+            ? mod.ValidForFreestyleAsRequiredMod === true
+            : mod.ValidForMultiplayer === true
+          : mod.ValidForMultiplayerAsFreeMod === true && !conflictsWithRequired(mod),
       ),
     }))
     .filter((category) => category.mods.length),
 );
 const pickerStyle = computed(() => ({ width: `min(90vw, ${Math.max(28, pickerCategories.value.length * 16 + 5)}rem)` }));
 const categoriesStyle = computed(() => ({ gridTemplateColumns: `repeat(${Math.max(1, pickerCategories.value.length)}, minmax(9rem, 1fr))` }));
+const requiredPreviewMods = computed(() => previewMods(requiredMods));
+const allowedPreviewMods = computed(() => previewMods(allowedMods));
 
 function itemMods(field) {
   const camelCaseField = field === "required_mods" ? "requiredMods" : "allowedMods";
   const values = Array.isArray(modsItem.value?.[field]) ? modsItem.value[field] : modsItem.value?.[camelCaseField];
   return (Array.isArray(values) ? values : []).map((mod) => (typeof mod === "string" ? mod : mod?.acronym)).filter(Boolean);
+}
+function previewMods(mods) {
+  const selected = new Set([...mods].map((acronym) => String(acronym).toUpperCase()));
+  return modCategories.value.flatMap((category) => category.mods.filter((mod) => selected.has(String(mod.Acronym).toUpperCase())).map((mod) => ({ mod, category })));
+}
+function moreModsIconSvg() {
+  const hex = hexBody.replace(/fill="white"/g, 'fill="#ffcc22"');
+  const glyph = `<g fill="#594605"><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/><circle cx="5" cy="12" r="1.8"/></g>`;
+  return `<svg viewBox="10 7 100 70" fill="none" aria-hidden="true"><g transform="translate(10 7)">${hex}</g><g transform="translate(60 42) scale(3.7) translate(-12 -12)">${glyph}</g></svg>`;
+}
+function previewMoreTooltip(mods) {
+  const rows = mods
+    .map(({ mod, category }) => `<span class="app-tooltip__more-mod-row"><span class="app-tooltip__more-mod-icon">${modIconSvg(category, mod)}</span><span>${escapeHtml(mod.Name)}</span></span>`)
+    .join("");
+  return { html: `<div class="app-tooltip__more-mods">${rows}</div>`, interactive: true };
 }
 function syncFromItem() {
   requiredMods.clear();
@@ -88,17 +109,25 @@ function syncFromItem() {
   itemMods("required_mods").forEach((mod) => requiredMods.add(String(mod).toUpperCase()));
   itemMods("allowed_mods").forEach((mod) => allowedMods.add(String(mod).toUpperCase()));
   freestyle.value = Boolean(modsItem.value?.freestyle);
+  removeRequiredConflictsFromAllowed();
 }
 function openPicker(kind) {
   pickerKind.value = kind;
   selectedMods.clear();
-  (kind === "required" ? requiredMods : allowedMods).forEach((mod) => selectedMods.add(mod));
+  (kind === "required" ? requiredMods : allowedMods).forEach((mod) => {
+    const entry = modByAcronym.value.get(mod);
+    if (kind === "required" || (entry && !conflictsWithRequired(entry))) selectedMods.add(mod);
+  });
   pickerVisible.value = true;
 }
 function commitPicker() {
   const target = pickerKind.value === "required" ? requiredMods : allowedMods;
   target.clear();
-  selectedMods.forEach((mod) => target.add(mod));
+  selectedMods.forEach((acronym) => {
+    const mod = modByAcronym.value.get(acronym);
+    if (pickerKind.value === "required" || (mod && !conflictsWithRequired(mod))) target.add(acronym);
+  });
+  if (pickerKind.value === "required") removeRequiredConflictsFromAllowed();
   pickerVisible.value = false;
 }
 function closeSettings() {
@@ -188,9 +217,29 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+function conflictingMods(mod) {
+  const acronym = String(mod.Acronym).toUpperCase();
+  const incompatible = new Set((mod.IncompatibleMods || []).map((value) => String(value).toUpperCase()));
+  const visibleAcronyms = new Set(pickerCategories.value.flatMap((category) => category.mods.map((candidate) => String(candidate.Acronym).toUpperCase())));
+  return rulesetMods.value.filter((candidate) => {
+    const candidateAcronym = String(candidate.Acronym).toUpperCase();
+    if (candidateAcronym === acronym || !visibleAcronyms.has(candidateAcronym)) return false;
+    return incompatible.has(candidateAcronym) || (candidate.IncompatibleMods || []).some((value) => String(value).toUpperCase() === acronym);
+  });
+}
 function tooltip(mod) {
-  if (pickerKind.value === "allowed" || !mod.Description) return pickerKind.value === "allowed" ? "" : { html: `<strong>${escapeHtml(mod.Name)}</strong>` };
-  return { html: `<strong>${escapeHtml(mod.Name)}</strong><span>${escapeHtml(mod.Description)}</span>` };
+  const description = mod.Description ? `<span>${escapeHtml(mod.Description)}</span>` : "";
+  const conflicts = conflictingMods(mod);
+  const conflictMarkup = conflicts.length
+    ? `<small>Incompatible with</small><div class="app-tooltip__conflicts">${conflicts
+        .map((conflict) => {
+          const category = categoryDefinitions.find((entry) => entry.type === conflict.Type);
+          const icon = category ? modIconSvg(category, conflict) : "";
+          return `<span class="app-tooltip__conflict" title="${escapeHtml(conflict.Name)}" aria-label="${escapeHtml(conflict.Name)}"><span class="app-tooltip__conflict-icon">${icon}</span></span>`;
+        })
+        .join("")}</div>`
+    : "";
+  return { html: `${description}${conflictMarkup}`, showDelay: 300, dynamic: true };
 }
 function modStyle(category) {
   const [selected, base] = categoryColors[category.tone];
@@ -242,8 +291,8 @@ watch(lastEvent, (event) => {
     toast.add({ severity: "success", summary: "Mods updated", detail: "Playlist mods were updated successfully.", life: 3500 });
   }
 });
-onMounted(() => window.addEventListener("keydown", onKeydown, true));
-onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
+onMounted(() => document.addEventListener("keydown", onKeydown, true));
+onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown, true));
 </script>
 
 <template>
@@ -265,6 +314,18 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
         <div>
           <strong>Required mods</strong>
           <p>Mods that are required for everyone playing this map.</p>
+          <div v-if="requiredPreviewMods.length" class="playlist-mods-settings-dialog__preview" aria-label="Selected required mods">
+            <span v-for="entry in requiredPreviewMods.slice(0, 9)" :key="entry.mod.Acronym" v-tooltip.top="entry.mod.Name" class="playlist-mods-settings-dialog__preview-mod">
+              <SvgMarkup :svg="modIconSvg(entry.category, entry.mod)" />
+            </span>
+            <span
+              v-if="requiredPreviewMods.length > 9"
+              v-tooltip.top="previewMoreTooltip(requiredPreviewMods.slice(9))"
+              class="playlist-mods-settings-dialog__preview-mod"
+              aria-label="More required mods"
+              ><SvgMarkup :svg="moreModsIconSvg()"
+            /></span>
+          </div>
         </div>
         <Button label="Configure" text :disabled="saving" @click="openPicker('required')" />
       </div>
@@ -272,6 +333,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
         <div>
           <strong>Allowed mods</strong>
           <p>Free mods that players may add to this map.</p>
+          <div v-if="allowedPreviewMods.length" class="playlist-mods-settings-dialog__preview" aria-label="Selected allowed mods">
+            <span v-for="entry in allowedPreviewMods.slice(0, 9)" :key="entry.mod.Acronym" v-tooltip.top="entry.mod.Name" class="playlist-mods-settings-dialog__preview-mod">
+              <SvgMarkup :svg="modIconSvg(entry.category, entry.mod)" />
+            </span>
+            <span v-if="allowedPreviewMods.length > 9" v-tooltip.top="previewMoreTooltip(allowedPreviewMods.slice(9))" class="playlist-mods-settings-dialog__preview-mod" aria-label="More allowed mods"
+              ><SvgMarkup :svg="moreModsIconSvg()"
+            /></span>
+          </div>
         </div>
         <Button label="Configure" text :disabled="saving || freestyle" @click="openPicker('allowed')" />
       </div>
@@ -370,6 +439,26 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
   margin: 0.25rem 0 0;
   color: var(--app-muted);
   font-size: 0.68rem;
+}
+.playlist-mods-settings-dialog__preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  margin-top: 0.45rem;
+}
+.playlist-mods-settings-dialog__preview-mod {
+  display: inline-flex;
+  width: 1.55rem;
+  height: 1.1rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+}
+.playlist-mods-settings-dialog__preview-mod :deep(svg) {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .playlist-mods-settings-dialog__row :deep(.p-button) {
   min-width: 5.8rem;
@@ -475,6 +564,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
   font-size: 0.68rem;
   font-weight: 700;
   text-align: left;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
 }
 .playlist-mods-dialog__mod-copy {
   display: flex;
@@ -507,13 +600,18 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown, true));
   height: 100%;
 }
 .playlist-mods-dialog__mod:hover {
-  border-color: var(--mod-selected) !important;
-  background: color-mix(in srgb, var(--mod-base) 78%, var(--mod-selected)) !important;
+  background: color-mix(in srgb, var(--mod-base) 86%, #000) !important;
 }
 .playlist-mods-dialog__mod--selected {
   border-color: var(--mod-selected) !important;
   background: var(--mod-selected) !important;
   color: #151923 !important;
+}
+.playlist-mods-dialog__mod--selected .playlist-mods-dialog__mod-description {
+  color: rgba(21, 25, 35, 0.72);
+}
+.playlist-mods-dialog__mod--selected:hover {
+  background: color-mix(in srgb, var(--mod-selected) 86%, #000) !important;
 }
 .playlist-mods-dialog__mod--blocked {
   opacity: 0.42;
