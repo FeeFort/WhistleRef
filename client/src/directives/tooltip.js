@@ -15,13 +15,29 @@ function isInteractive(binding) {
   return typeof binding.value === "object" && binding.value?.interactive === true;
 }
 
+function showDelayFrom(binding) {
+  return typeof binding.value === "object" && Number.isFinite(binding.value?.showDelay) ? Math.max(0, binding.value.showDelay) : SHOW_DELAY;
+}
+
+function isDynamic(binding) {
+  return typeof binding.value === "object" && binding.value?.dynamic === true;
+}
+
 function positionFrom(binding) {
   return Object.keys(binding.modifiers).find((modifier) => ["top", "bottom", "left", "right"].includes(modifier)) || "top";
 }
 
-function placeTooltip(target, tooltip, position) {
+function placeTooltip(target, tooltip, position, pointer = null) {
   const rect = target.getBoundingClientRect();
   const tooltipRect = tooltip.getBoundingClientRect();
+  if (pointer) {
+    const left = pointer.x + GAP;
+    const top = pointer.y + GAP;
+    tooltip.style.left = `${Math.max(8, Math.min(left, window.innerWidth - tooltipRect.width - 8))}px`;
+    tooltip.style.top = `${Math.max(8, Math.min(top, window.innerHeight - tooltipRect.height - 8))}px`;
+    tooltip.dataset.position = "dynamic";
+    return;
+  }
   let left = rect.left + (rect.width - tooltipRect.width) / 2;
   let top = rect.top - tooltipRect.height - GAP;
 
@@ -65,6 +81,7 @@ function scheduleRemoveTooltip(target) {
 function hideTooltip(target) {
   const state = target.__appTooltip;
   if (!state) return;
+  if (state.dynamic) return removeTooltip(target);
   if (state.interactive) scheduleRemoveTooltip(target);
   else removeTooltip(target);
 }
@@ -80,7 +97,7 @@ function showTooltip(target) {
   state.showTimer = window.setTimeout(() => {
     if (state.element || target.disabled) return;
     const tooltip = document.createElement("div");
-    tooltip.className = "app-tooltip";
+    tooltip.className = `app-tooltip${state.dynamic ? " app-tooltip--dynamic" : ""}`;
     tooltip.setAttribute("role", "tooltip");
     if (htmlContent) tooltip.innerHTML = htmlContent;
     else tooltip.textContent = textContent;
@@ -96,14 +113,25 @@ function showTooltip(target) {
     }
     document.body.appendChild(tooltip);
     state.element = tooltip;
-    placeTooltip(target, tooltip, positionFrom(state.binding));
+    placeTooltip(target, tooltip, positionFrom(state.binding), state.dynamic ? state.pointer : null);
     requestAnimationFrame(() => tooltip.classList.add("app-tooltip--visible"));
-  }, SHOW_DELAY);
+  }, showDelayFrom(state.binding));
 }
 
 export default {
   mounted(target, binding) {
-    const state = { element: null, showTimer: null, hideTimer: null, binding, interactive: isInteractive(binding), overTarget: false, overTooltip: false, focused: false };
+    const state = {
+      element: null,
+      showTimer: null,
+      hideTimer: null,
+      binding,
+      interactive: isInteractive(binding),
+      dynamic: isDynamic(binding),
+      pointer: null,
+      overTarget: false,
+      overTooltip: false,
+      focused: false,
+    };
     const enter = () => {
       state.overTarget = true;
       showTooltip(target);
@@ -111,6 +139,10 @@ export default {
     const leave = () => {
       state.overTarget = false;
       hideTooltip(target);
+    };
+    const move = (event) => {
+      state.pointer = { x: event.clientX, y: event.clientY };
+      if (state.dynamic && state.element) placeTooltip(target, state.element, "dynamic", state.pointer);
     };
     const focus = () => {
       state.focused = true;
@@ -122,17 +154,20 @@ export default {
     };
     state.enter = enter;
     state.leave = leave;
+    state.move = move;
     state.focus = focus;
     state.blur = blur;
     target.__appTooltip = state;
     target.addEventListener("mouseenter", enter);
     target.addEventListener("mouseleave", leave);
+    target.addEventListener("mousemove", move);
     target.addEventListener("focus", focus);
     target.addEventListener("blur", blur);
   },
   updated(target, binding) {
     target.__appTooltip.binding = binding;
     target.__appTooltip.interactive = isInteractive(binding);
+    target.__appTooltip.dynamic = isDynamic(binding);
     if (!contentFrom(binding) && !isHtmlContent(binding)) removeTooltip(target);
   },
   unmounted(target) {
@@ -140,6 +175,7 @@ export default {
     if (!state) return;
     target.removeEventListener("mouseenter", state.enter);
     target.removeEventListener("mouseleave", state.leave);
+    target.removeEventListener("mousemove", state.move);
     target.removeEventListener("focus", state.focus);
     target.removeEventListener("blur", state.blur);
     removeTooltip(target);

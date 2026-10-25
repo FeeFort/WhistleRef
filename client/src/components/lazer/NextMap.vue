@@ -145,12 +145,7 @@ function openModsSettings(item) {
 
 function handleEscape(event) {
   if (event.code !== "Escape" || event.isComposing) return;
-  if (modsSettingsVisible.value) {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    modsSettingsVisible.value = false;
-    return;
-  }
+  if (modsSettingsVisible.value) return;
   if (visible.value) {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -180,8 +175,8 @@ watch(lastEvent, (event) => {
 });
 
 watch(() => props.items.map((item) => item.beatmap_id).join(","), loadPlaylistBeatmaps, { immediate: true });
-onMounted(() => window.addEventListener("keydown", handleEscape, true));
-onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape, true));
+onMounted(() => document.addEventListener("keydown", handleEscape, true));
+onBeforeUnmount(() => document.removeEventListener("keydown", handleEscape, true));
 </script>
 
 <template>

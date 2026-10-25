@@ -421,6 +421,7 @@ async function toggleWinTemplateMenu() {
 }
 function handleEscape(event) {
   if (event.key !== "Escape" || !props.visible) return;
+  if (slotModsVisible.value) return;
   if (rulesetMenuOpen.value) {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -455,13 +456,13 @@ function handleEscape(event) {
     cancelPoolEdit();
   }
 }
-onMounted(() => window.addEventListener("keydown", handleEscape, true));
+onMounted(() => document.addEventListener("keydown", handleEscape, true));
 onBeforeUnmount(() => {
   clearTimeout(poolEditCloseTimer);
   clearTimeout(slotEditCloseTimer);
   previewTimers.forEach((timer) => clearTimeout(timer));
   previewTimers.clear();
-  window.removeEventListener("keydown", handleEscape, true);
+  document.removeEventListener("keydown", handleEscape, true);
   window.removeEventListener("resize", positionRulesetMenu);
   window.removeEventListener("scroll", positionRulesetMenu, true);
   window.removeEventListener("resize", positionWinTemplateMenu);
