@@ -2509,7 +2509,9 @@ function normalizeLazerUserName(value) {
 }
 
 async function resolveLazerLegacyUser(roomId, target) {
-  const value = String(target || "").trim();
+  const value = String(target || "")
+    .trim()
+    .replace(/^#(?=\d)/, "");
   if (!value) return null;
   const numericId = /^\d+$/.test(value) ? Number(value) : null;
   if (Number.isInteger(numericId) && numericId > 0) {
