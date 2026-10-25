@@ -109,7 +109,9 @@ const commonLobbyIsValid = computed(() => {
 
 const isValid = computed(() => {
   if (isLazer.value) {
-    return commonLobbyIsValid.value && Number.isInteger(Number(beatmapId.value)) && Number(beatmapId.value) > 0 && Number.isInteger(Number(maxParticipants.value)) && Number(maxParticipants.value) >= 2;
+    return (
+      commonLobbyIsValid.value && Number.isInteger(Number(beatmapId.value)) && Number(beatmapId.value) > 0 && Number.isInteger(Number(maxParticipants.value)) && Number(maxParticipants.value) >= 2
+    );
   }
   return commonLobbyIsValid.value;
 });
@@ -278,7 +280,7 @@ watch(
             <span>Max participants</span><strong>{{ maxParticipantsLabel }}</strong>
           </div>
           <div class="create-lobby-dialog__slider-wrap">
-        <Slider v-model="maxParticipants" :min="2" :max="17" :step="1" aria-label="Max participants" />
+            <Slider v-model="maxParticipants" :min="2" :max="17" :step="1" aria-label="Max participants" />
           </div>
           <div class="create-lobby-dialog__slider-range"><span>2</span><span>∞</span></div>
         </div>

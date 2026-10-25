@@ -689,9 +689,7 @@ watch(
         const roomMaxParticipants = Number(room.max_participants ?? 0);
         const requestedMaxParticipants = Number(requested.max_participants ?? 0);
         const settingsDiffer =
-          (requested.match_type && room.state?.type !== requested.match_type) ||
-          (requested.queue_mode && room.queue_mode !== requested.queue_mode) ||
-          roomMaxParticipants !== requestedMaxParticipants;
+          (requested.match_type && room.state?.type !== requested.match_type) || (requested.queue_mode && room.queue_mode !== requested.queue_mode) || roomMaxParticipants !== requestedMaxParticipants;
         if (settingsDiffer) {
           // TODO: Remove this fallback after referee hub MakeRoom settings support is deployed.
           changeLazerRoomSettings(Number(room.room_id), requested);
