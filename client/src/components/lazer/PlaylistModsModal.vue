@@ -533,9 +533,9 @@ function conflictingMods(mod) {
     return incompatible.has(candidateAcronym) || (candidate.IncompatibleMods || []).some((value) => String(value).toUpperCase() === acronym);
   });
 }
-function tooltip(mod) {
+function tooltip(mod, showConflicts = true) {
   const description = mod.Description ? `<span>${escapeHtml(mod.Description)}</span>` : "";
-  const conflicts = conflictingMods(mod);
+  const conflicts = showConflicts ? conflictingMods(mod) : [];
   const conflictMarkup = conflicts.length
     ? `<small>Incompatible with</small><div class="app-tooltip__conflicts">${conflicts
         .map((conflict) => {
@@ -748,7 +748,7 @@ onBeforeUnmount(() => {
     :pt="{ mask: { class: 'app-dialog-mask' } }"
     @hide="commitPicker"
   >
-    <div class="playlist-mods-dialog__customize-layer" :class="{ 'playlist-mods-dialog__customize-layer--open': customizeVisible }">
+    <div v-if="pickerKind === 'required'" class="playlist-mods-dialog__customize-layer" :class="{ 'playlist-mods-dialog__customize-layer--open': customizeVisible }">
       <div class="playlist-mods-dialog__customize-bar">
         <Button
           text
@@ -851,7 +851,7 @@ onBeforeUnmount(() => {
           <button
             v-for="mod in category.mods"
             :key="mod.Acronym"
-            v-tooltip.top="tooltip(mod)"
+            v-tooltip.top="tooltip(mod, pickerKind === 'required')"
             type="button"
             class="playlist-mods-dialog__mod"
             :class="{ 'playlist-mods-dialog__mod--selected': isModSelected(mod), 'playlist-mods-dialog__mod--blocked': modBlocked(mod) }"
