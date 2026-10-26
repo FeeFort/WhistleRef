@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { Check, Clock3, Gamepad2, Play } from "@lucide/vue";
 import { useChatSettings } from "../../composables/useChatSettings";
 import { beatmapCoverBackground } from "../../composables/useBeatmapCover";
+import ModIconList from "../ModIconList.vue";
 
 const props = defineProps({
   map: { type: Object, default: null },
@@ -183,7 +184,7 @@ const pickedByStyle = computed(() => {
               >picked by <b class="now-playing__team" :class="`now-playing__team--${pickedByClass}`" :style="pickedByStyle">{{ map.pickedBy }}</b></span
             >
             <span v-if="mods.length" class="now-playing__separator">·</span>
-            <span v-for="mod in mods" :key="mod" class="now-playing__mod">{{ mod }}</span>
+            <ModIconList :mods="mods" :ruleset-id="map.rulesetId" />
           </div>
         </div>
         <div class="now-playing__status"><component :is="statusIcon" :size="13" />{{ statusLabel }}</div>

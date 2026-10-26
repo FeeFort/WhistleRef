@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { Check, Clock3, Gamepad2, Play } from "@lucide/vue";
 import { useChatSettings } from "../../composables/useChatSettings";
 import { beatmapCoverBackground } from "../../composables/useBeatmapCover";
+import ModIconList from "../ModIconList.vue";
 
 const props = defineProps({
   map: { type: Object, default: null },
@@ -123,11 +124,12 @@ const modLabels = Object.freeze({
 const mods = computed(() => {
   const source = Array.isArray(props.map?.mods) ? props.map.mods : String(props.map?.mods || "").split(/\s*,\s*|\s+/);
   return source
-    .map((mod) => (typeof mod === "string" ? mod : mod?.acronym))
-    .filter(Boolean)
-    .filter((mod) => !/^(?:enabled|disabled)$/i.test(mod))
-    .map((mod) => modLabels[mod.toLowerCase()] || mod.toUpperCase())
-    .filter((mod, index, values) => values.indexOf(mod) === index);
+    .map((mod) => {
+      const acronym = typeof mod === "string" ? mod : mod?.acronym;
+      return { acronym: modLabels[String(acronym || "").toLowerCase()] || String(acronym || "").toUpperCase(), settings: typeof mod === "object" ? mod.settings || {} : {} };
+    })
+    .filter((mod) => mod.acronym && !/^(?:enabled|disabled)$/i.test(mod.acronym))
+    .filter((mod, index, values) => values.findIndex((candidate) => candidate.acronym === mod.acronym) === index);
 });
 function normalizeTeamName(value) {
   return String(value || "")
@@ -182,7 +184,7 @@ const pickedByStyle = computed(() => {
               >picked by <b class="now-playing__team" :class="`now-playing__team--${pickedByClass}`" :style="pickedByStyle">{{ map.pickedBy }}</b></span
             >
             <span v-if="mods.length" class="now-playing__separator">·</span>
-            <span v-for="mod in mods" :key="mod" class="now-playing__mod">{{ mod }}</span>
+            <ModIconList :mods="mods" :ruleset-id="map.rulesetId" :beatmap="map" show-settings />
           </div>
         </div>
         <div class="now-playing__status"><component :is="statusIcon" :size="13" />{{ statusLabel }}</div>

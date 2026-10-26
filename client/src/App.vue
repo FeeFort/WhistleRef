@@ -1697,7 +1697,9 @@ function syncLazerNowPlaying(room, { force = false } = {}) {
       currentMap.startTimestamp = null;
       currentMap.error = null;
     }
-    currentMap.mods = (Array.isArray(playlistItem.required_mods) ? playlistItem.required_mods : []).map((mod) => (typeof mod === "string" ? mod : mod?.acronym)).filter(Boolean);
+    currentMap.mods = (Array.isArray(playlistItem.required_mods) ? playlistItem.required_mods : [])
+      .map((mod) => (typeof mod === "string" ? mod : { acronym: mod?.acronym, settings: mod?.settings || {} }))
+      .filter((mod) => (typeof mod === "string" ? mod : mod.acronym));
     currentMap.rulesetId = playlistItem.ruleset_id;
     return;
   }
@@ -1731,9 +1733,15 @@ function setLazerNowPlayingFromPreview(chatId, playlistItem, preview) {
     starRating: preview.starRating,
     totalSeconds: preview.totalSeconds,
     beatmapsetId: validBeatmapsetId,
+    circleSize: preview.circleSize,
+    approachRate: preview.approachRate,
+    drainRate: preview.drainRate,
+    overallDifficulty: preview.overallDifficulty,
     coverUrl: validBeatmapsetId ? `https://assets.ppy.sh/beatmaps/${validBeatmapsetId}/covers/card@2x.jpg` : "",
     rulesetId: playlistItem.ruleset_id,
-    mods: (Array.isArray(playlistItem.required_mods) ? playlistItem.required_mods : []).map((mod) => (typeof mod === "string" ? mod : mod?.acronym)).filter(Boolean),
+    mods: (Array.isArray(playlistItem.required_mods) ? playlistItem.required_mods : [])
+      .map((mod) => (typeof mod === "string" ? mod : { acronym: mod?.acronym, settings: mod?.settings || {} }))
+      .filter((mod) => (typeof mod === "string" ? mod : mod.acronym)),
     status: "waiting",
     error: null,
   });
@@ -1774,8 +1782,14 @@ async function loadLazerNowPlayingMap(chatId, roomId, playlistItem) {
       totalSeconds: info.totalSeconds,
       beatmapsetId: Number.isInteger(beatmapsetId) && beatmapsetId > 0 ? beatmapsetId : null,
       coverUrl,
+      circleSize: info.circleSize,
+      approachRate: info.approachRate,
+      drainRate: info.drainRate,
+      overallDifficulty: info.overallDifficulty,
       rulesetId: playlistItem.ruleset_id,
-      mods: (Array.isArray(playlistItem.required_mods) ? playlistItem.required_mods : []).map((mod) => (typeof mod === "string" ? mod : mod?.acronym)).filter(Boolean),
+      mods: (Array.isArray(playlistItem.required_mods) ? playlistItem.required_mods : [])
+        .map((mod) => (typeof mod === "string" ? mod : { acronym: mod?.acronym, settings: mod?.settings || {} }))
+        .filter((mod) => (typeof mod === "string" ? mod : mod.acronym)),
       status: "waiting",
       error: null,
     });
