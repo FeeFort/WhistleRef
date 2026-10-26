@@ -573,7 +573,17 @@ function modStyle(category) {
   return { "--mod-selected": selected, "--mod-base": base, "--category-color": selected };
 }
 function payload(mods, kind) {
-  return [...mods].map((acronym) => ({ acronym, settings: modByAcronym.value.get(acronym) ? ensureSettings(modByAcronym.value.get(acronym), kind) : {} }));
+  return [...mods].map((acronym) => {
+    const mod = modByAcronym.value.get(acronym);
+    if (!mod) return { acronym, settings: {} };
+    const values = ensureSettings(mod, kind);
+    const settings = Object.fromEntries(
+      settingDefinitions(mod)
+        .filter((setting) => !settingIsDefault(mod, setting, values))
+        .map((setting) => [setting.Name, values[setting.Name]]),
+    );
+    return { acronym, settings };
+  });
 }
 function save() {
   if (saving.value || !modsItem.value) return;
