@@ -404,7 +404,11 @@ function commitPicker() {
 function openCustomizeOnHover() {
   customizeHovered.value = true;
   clearTimeout(customizeCloseTimer);
-  if (pickerVisible.value && hasCustomizableMods.value) customizeVisible.value = true;
+  if (!pickerVisible.value || !hasCustomizableMods.value) return;
+  customizeCloseTimer = setTimeout(() => {
+    if (customizeHovered.value) customizeVisible.value = true;
+    customizeCloseTimer = null;
+  }, 130);
 }
 function closeCustomizeOnHover() {
   customizeHovered.value = false;
@@ -744,12 +748,7 @@ onBeforeUnmount(() => {
     :pt="{ mask: { class: 'app-dialog-mask' } }"
     @hide="commitPicker"
   >
-    <div
-      class="playlist-mods-dialog__customize-layer"
-      :class="{ 'playlist-mods-dialog__customize-layer--open': customizeVisible }"
-      @mouseenter="openCustomizeOnHover"
-      @mouseleave="closeCustomizeOnHover"
-    >
+    <div class="playlist-mods-dialog__customize-layer" :class="{ 'playlist-mods-dialog__customize-layer--open': customizeVisible }">
       <div class="playlist-mods-dialog__customize-bar">
         <Button
           text
@@ -757,11 +756,13 @@ onBeforeUnmount(() => {
           :class="{ 'playlist-mods-dialog__customize-toggle--open': customizeVisible }"
           :disabled="!hasCustomizableMods"
           :aria-expanded="customizeVisible"
+          @mouseenter="openCustomizeOnHover"
+          @mouseleave="closeCustomizeOnHover"
           ><span>Customize</span><ChevronDown :size="13"
         /></Button>
       </div>
       <Transition name="customize-panel">
-        <div v-if="customizeVisible" class="playlist-mods-dialog__customize-zone">
+        <div v-if="customizeVisible" class="playlist-mods-dialog__customize-zone" @mouseenter="openCustomizeOnHover" @mouseleave="closeCustomizeOnHover">
           <div class="playlist-mods-dialog__customize-panel">
             <div v-for="entry in customizeMods" :key="entry.mod.Acronym" class="playlist-mods-dialog__customize-mod">
               <div class="playlist-mods-dialog__customize-mod-header">
@@ -1022,8 +1023,10 @@ onBeforeUnmount(() => {
   margin-bottom: 0.45rem;
 }
 .playlist-mods-dialog__customize-toggle {
+  width: min(24rem, 100%);
   gap: 0.3rem;
-  min-width: 7rem;
+  min-width: 0;
+  justify-content: center;
   border: 1px solid var(--app-border) !important;
   border-radius: 0.4rem !important;
   background: var(--app-control) !important;
@@ -1037,7 +1040,6 @@ onBeforeUnmount(() => {
 .playlist-mods-dialog__customize-toggle--open :deep(svg) {
   transform: rotate(180deg);
 }
-.playlist-mods-dialog__customize-toggle:hover:not(:disabled),
 .playlist-mods-dialog__customize-toggle--open {
   border-color: var(--app-primary) !important;
   background: var(--app-primary) !important;
@@ -1051,6 +1053,7 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 1;
   display: flex;
+  width: 100%;
   max-height: min(32rem, 65vh);
   flex-direction: column;
   gap: 0.8rem;
@@ -1065,11 +1068,11 @@ onBeforeUnmount(() => {
 .playlist-mods-dialog__customize-zone {
   position: absolute;
   top: calc(100% + 0.15rem);
-  right: -0.65rem;
+  right: 0;
   z-index: 6;
-  width: min(25.3rem, calc(50% + 0.65rem));
+  width: min(24rem, calc(50% + 0.65rem));
   box-sizing: border-box;
-  padding: 0.65rem;
+  padding: 0;
   pointer-events: auto;
 }
 .customize-panel-enter-active,
