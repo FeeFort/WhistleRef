@@ -49,7 +49,12 @@ const normalizedMods = computed(() =>
       settings: typeof mod === "object" && mod?.settings && typeof mod.settings === "object" ? mod.settings : {},
     }))
     .filter((mod) => mod.acronym)
-    .filter((mod, index, values) => values.findIndex((candidate) => candidate.acronym === mod.acronym) === index),
+    .filter((mod, index, values) => values.findIndex((candidate) => candidate.acronym === mod.acronym) === index)
+    .sort((left, right) => {
+      const leftIndex = rulesetMods.value.findIndex((candidate) => String(candidate.Acronym).toUpperCase() === left.acronym);
+      const rightIndex = rulesetMods.value.findIndex((candidate) => String(candidate.Acronym).toUpperCase() === right.acronym);
+      return (leftIndex < 0 ? Number.MAX_SAFE_INTEGER : leftIndex) - (rightIndex < 0 ? Number.MAX_SAFE_INTEGER : rightIndex);
+    }),
 );
 const visibleMods = computed(() => (props.max > 0 ? normalizedMods.value.slice(0, props.max) : normalizedMods.value));
 const hiddenMods = computed(() => (props.max > 0 ? normalizedMods.value.slice(props.max) : []));
