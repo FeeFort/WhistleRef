@@ -68,7 +68,7 @@ function cancelEditing() {
 
 <template>
   <div class="slider-input-number" :class="{ 'slider-input-number--stacked': isStacked }">
-    <span v-if="isStacked" class="slider-input-number__label" v-tooltip.top="settingLabelTooltip">{{ settingLabel }}</span>
+    <span v-if="isStacked" v-tooltip.top="settingLabelTooltip" class="slider-input-number__label">{{ settingLabel }}</span>
     <InputNumber
       v-if="editing"
       ref="inputRef"

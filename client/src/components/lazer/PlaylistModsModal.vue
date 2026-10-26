@@ -779,7 +779,7 @@ onBeforeUnmount(() => {
                   'playlist-mods-dialog__customize-setting--select': setting.Type === 'string',
                 }"
               >
-                <label v-if="!(setting.Type === 'number' && settingRange(entry.mod, setting))" class="playlist-mods-dialog__customize-label" v-tooltip.top="settingTooltip(setting)">
+                <label v-if="!(setting.Type === 'number' && settingRange(entry.mod, setting))" v-tooltip.top="settingTooltip(setting)" class="playlist-mods-dialog__customize-label">
                   {{ setting.Label || setting.Name }}
                 </label>
                 <SliderInputNumber
