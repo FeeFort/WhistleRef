@@ -1,0 +1,132 @@
+{
+  "EZ": {
+    "retries": { "default": 2, "min": 0, "max": 10, "step": 1 }
+  },
+  "HT": {
+    "speed_change": { "default": 0.75, "min": 0.5, "max": 0.99, "step": 0.01 }
+  },
+  "DC": {
+    "speed_change": { "default": 0.75, "min": 0.5, "max": 0.99, "step": 0.01 }
+  },
+  "DT": {
+    "speed_change": { "default": 1.5, "min": 1.01, "max": 2, "step": 0.01 }
+  },
+  "NC": {
+    "speed_change": { "default": 1.5, "min": 1.01, "max": 2, "step": 0.01 }
+  },
+  "FL": {
+    "follow_delay": { "default": 120, "min": 120, "max": 1200, "step": 120 },
+    "size_multiplier": { "default": 1, "min": 0.5, "max": 2, "step": 0.1 }
+  },
+  "AC": {
+    "minimum_accuracy": { "default": 0.9, "min": 0.6, "max": 0.999, "step": 0.001 },
+    "accuracy_judge_mode": {
+      "default": 0,
+      "options": [
+        { "value": 0, "label": "Maximum achievable" },
+        { "value": 1, "label": "Standard" }
+      ]
+    }
+  },
+  "TP": {
+    "seed": { "max_length": 10 }
+  },
+  "DA": {
+    "circle_size": { "default": null, "min": 0, "max": 10, "step": 0.1 },
+    "approach_rate": { "default": null, "min": 0, "max": 10, "step": 0.1 },
+    "drain_rate": { "default": null, "min": 0, "max": 10, "step": 0.1 },
+    "overall_difficulty": { "default": null, "min": 0, "max": 10, "step": 0.1 },
+    "scroll_speed": { "default": 1, "min": 0.25, "max": 4, "step": 0.05 }
+  },
+  "RD": {
+    "angle_sharpness": { "default": 7, "min": 1, "max": 10, "step": 0.1 },
+    "seed": { "max_length": 10 }
+  },
+  "WG": {
+    "strength": { "default": 1, "min": 0.1, "max": 2, "step": 0.1 }
+  },
+  "GR": {
+    "start_scale": { "default": 0.5, "min": 0, "max": 0.99, "step": 0.01 }
+  },
+  "DF": {
+    "start_scale": { "default": 2, "min": 1, "max": 25, "step": 0.1 }
+  },
+  "WU": {
+    "initial_rate": { "default": 1, "min": 0.5, "max": 1.99, "step": 0.01 },
+    "final_rate": { "default": 1.5, "min": 0.51, "max": 2, "step": 0.01 }
+  },
+  "WD": {
+    "initial_rate": { "default": 1, "min": 0.51, "max": 2, "step": 0.01 },
+    "final_rate": { "default": 0.75, "min": 0.5, "max": 1.99, "step": 0.01 }
+  },
+  "BR": {
+    "spin_speed": { "default": 0.5, "min": 0.02, "max": 12, "step": 0.01 },
+    "direction": {
+      "default": 0,
+      "options": [
+        { "value": 0, "label": "Clockwise" },
+        { "value": 1, "label": "Counter-clockwise" }
+      ]
+    }
+  },
+  "AD": {
+    "scale": { "default": 4, "min": 1.5, "max": 10, "step": 0.1 },
+    "style": {
+      "default": 1,
+      "options": [
+        { "value": 0, "label": "Linear" },
+        { "value": 1, "label": "Gravity" },
+        { "value": 2, "label": "In-out 1" },
+        { "value": 3, "label": "In-out 2" },
+        { "value": 4, "label": "Accelerate 1" },
+        { "value": 5, "label": "Accelerate 2" },
+        { "value": 6, "label": "Accelerate 3" },
+        { "value": 7, "label": "Decelerate 1" },
+        { "value": 8, "label": "Decelerate 2" },
+        { "value": 9, "label": "Decelerate 3" }
+      ]
+    }
+  },
+  "MU": {
+    "mute_combo_count": { "default": 100, "min": 0, "max": 500, "step": 1 }
+  },
+  "NS": {
+    "hidden_combo_count": { "default": 10, "min": 0, "max": 50, "step": 1 }
+  },
+  "MG": {
+    "attraction_strength": { "default": 0.5, "min": 0.05, "max": 1, "step": 0.05 }
+  },
+  "RP": {
+    "repulsion_strength": { "default": 0.5, "min": 0.05, "max": 1, "step": 0.05 }
+  },
+  "AS": {
+    "initial_rate": { "default": 1, "min": 0.5, "max": 2, "step": 0.01 }
+  },
+  "DP": {
+    "max_depth": { "default": 100, "min": 50, "max": 200, "step": 10 }
+  },
+  "BM": {
+    "max_size_combo_count": { "default": 50, "min": 5, "max": 100, "step": 1 },
+    "max_cursor_size": { "default": 10, "min": 5, "max": 15, "step": 0.5 }
+  },
+  "CO": {
+    "coverage": { "default": 0.5, "min": 0.2, "max": 0.8, "step": 0.1 },
+    "direction": {
+      "default": 0,
+      "options": [
+        { "value": 0, "label": "Along scroll" },
+        { "value": 1, "label": "Against scroll" }
+      ]
+    }
+  },
+  "MR": {
+    "reflection": {
+      "default": 0,
+      "options": [
+        { "value": 0, "label": "Horizontal" },
+        { "value": 1, "label": "Vertical" },
+        { "value": 2, "label": "Both" }
+      ]
+    }
+  }
+}

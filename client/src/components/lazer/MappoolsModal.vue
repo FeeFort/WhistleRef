@@ -59,7 +59,7 @@ const previewLoads = new Set();
 const hiddenPreviewKeys = ref(new Set());
 const previewTimers = new Map();
 const previewRequestVersions = new Map();
-const PREVIEW_CACHE_KEY = "whistleref-beatmap-preview-cache-v2";
+const PREVIEW_CACHE_KEY = "whistleref-beatmap-preview-cache-v3";
 const DELETE_CONFIRMATIONS_KEY = "whistleref-mappool-delete-confirmations";
 function readDeleteConfirmations() {
   try {
@@ -551,6 +551,10 @@ async function loadSlotPreview(pool, slot, beatmapId, version) {
       beatmapsetId: info.beatmapset_id || info.beatmapset?.id || null,
       starRating: info.difficulty_rating ?? null,
       totalSeconds: info.total_length ?? null,
+      circleSize: info.cs ?? info.circle_size ?? null,
+      approachRate: info.ar ?? info.approach_rate ?? null,
+      drainRate: info.drain ?? info.drain_rate ?? null,
+      overallDifficulty: info.accuracy ?? info.od ?? info.overall_difficulty ?? null,
     };
     if (!isCurrentPreviewRequest(pool, slot, beatmapId, version)) return;
     writePreviewCache(beatmapId, preview);
@@ -960,7 +964,15 @@ watch(editing, (value) => {
       <Button v-tooltip.top="'Confirm deletion'" label="Delete" severity="danger" @click="confirmDelete" />
     </template>
   </Dialog>
-  <PlaylistModsModal v-if="slotModsTarget" v-model:visible="slotModsVisible" :item="slotModsTarget" :ruleset-id="slotModsRuleset" local-only @save-mods="applySlotMods" />
+  <PlaylistModsModal
+    v-if="slotModsTarget"
+    v-model:visible="slotModsVisible"
+    :item="slotModsTarget"
+    :beatmap="slotModsTarget.preview"
+    :ruleset-id="slotModsRuleset"
+    local-only
+    @save-mods="applySlotMods"
+  />
   <Dialog
     v-if="invalidMappoolsConfirmation"
     :visible="Boolean(invalidMappoolsConfirmation)"

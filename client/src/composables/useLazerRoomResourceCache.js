@@ -1,7 +1,7 @@
 import { reactive } from "vue";
 import { formatBeatmapOwners } from "./useBeatmapAuthors";
 
-const STORAGE_KEY = "whistleref-lazer-room-resource-cache-v2";
+const STORAGE_KEY = "whistleref-lazer-room-resource-cache-v3";
 const inFlight = new Map();
 
 function readCache() {
@@ -114,6 +114,10 @@ export async function loadLazerCachedBeatmap(roomId, beatmapId, requestApi) {
       starRating: info?.difficulty_rating ?? null,
       totalSeconds: info?.total_length ?? null,
       rulesetId: info?.mode_int ?? info?.ruleset_id ?? null,
+      circleSize: info?.cs ?? info?.circle_size ?? null,
+      approachRate: info?.ar ?? info?.approach_rate ?? null,
+      drainRate: info?.drain ?? info?.drain_rate ?? null,
+      overallDifficulty: info?.accuracy ?? info?.od ?? info?.overall_difficulty ?? null,
     };
     room.beatmaps[id] = value;
     persist();

@@ -279,7 +279,14 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleEscape, true
     </div>
   </Dialog>
 
-  <PlaylistModsModal v-model:visible="modsSettingsVisible" :room-id="roomId" :item="modsItem" :current-item-id="currentItemId" :disabled="disabled || submitting || removingId !== null" />
+  <PlaylistModsModal
+    v-model:visible="modsSettingsVisible"
+    :room-id="roomId"
+    :item="modsItem"
+    :beatmap="modsItem ? beatmaps[modsItem.beatmap_id] : null"
+    :current-item-id="currentItemId"
+    :disabled="disabled || submitting || removingId !== null"
+  />
 </template>
 
 <style scoped>
