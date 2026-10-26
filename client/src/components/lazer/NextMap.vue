@@ -8,6 +8,7 @@ import { ArrowRightLeft, Gamepad2, ListMusic, Plus, RefreshCw, Trash2 } from "@l
 import { useServerConnection } from "../../composables/useServerConnection";
 import { beatmapCoverBackground } from "../../composables/useBeatmapCover";
 import { getLazerCachedBeatmap, loadLazerCachedBeatmap } from "../../composables/useLazerRoomResourceCache";
+import ModIconList from "../ModIconList.vue";
 import PlaylistModsModal from "./PlaylistModsModal.vue";
 
 const props = defineProps({
@@ -65,7 +66,9 @@ function itemMods(item) {
 }
 
 function itemModsFrom(item, field) {
-  return (Array.isArray(item?.[field]) ? item[field] : []).map((mod) => (typeof mod === "string" ? mod : mod?.acronym)).filter(Boolean);
+  return (Array.isArray(item?.[field]) ? item[field] : [])
+    .map((mod) => (typeof mod === "string" ? mod : { acronym: mod?.acronym, settings: mod?.settings || {} }))
+    .filter((mod) => (typeof mod === "string" ? mod : mod.acronym));
 }
 
 function itemRuleset(item) {
@@ -233,7 +236,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleEscape, true
             <span v-if="itemMeta(item).length" class="playlist-dialog__item-separator">·</span>
             <span class="playlist-dialog__item-ruleset"><Gamepad2 :size="11" />{{ itemRuleset(item) }}</span>
             <span v-if="itemMeta(item).length && itemMods(item).length" class="playlist-dialog__item-separator">·</span>
-            <span v-for="mod in itemMods(item)" :key="mod" class="playlist-dialog__item-mod">{{ mod }}</span>
+            <ModIconList :mods="itemMods(item)" :ruleset-id="item.ruleset_id" :max="5" :beatmap="beatmaps[item.beatmap_id]" show-settings />
           </div>
         </div>
         <span class="playlist-dialog__item-actions">

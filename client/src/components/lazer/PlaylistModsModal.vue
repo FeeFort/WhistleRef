@@ -356,7 +356,10 @@ function moreModsIconSvg() {
 }
 function previewMoreTooltip(mods) {
   const rows = mods
-    .map(({ mod, category }) => `<span class="app-tooltip__more-mod-row"><span class="app-tooltip__more-mod-icon">${modIconSvg(category, mod)}</span><span>${escapeHtml(mod.Name)}</span></span>`)
+    .map(
+      ({ mod, category, view }) =>
+        `<span class="app-tooltip__more-mod-row"><span class="app-tooltip__more-mod-icon">${view?.svg || modIconSvg(category, mod)}</span><span>${escapeHtml(mod.Name)}</span></span>`,
+    )
     .join("");
   return { html: `<div class="app-tooltip__more-mods">${rows}</div>`, interactive: true };
 }
@@ -678,7 +681,7 @@ onBeforeUnmount(() => {
           <p>Mods that are required for everyone playing this map.</p>
           <div v-if="requiredPreviewMods.length" class="playlist-mods-settings-dialog__preview" aria-label="Selected required mods">
             <span
-              v-for="entry in requiredPreviewMods.slice(0, 9)"
+              v-for="entry in requiredPreviewMods.slice(0, 5)"
               :key="entry.mod.Acronym"
               v-tooltip.top="settingsTooltip(entry.mod, entry.kind)"
               class="playlist-mods-settings-dialog__preview-mod"
@@ -687,8 +690,8 @@ onBeforeUnmount(() => {
               <SvgMarkup :svg="entry.view.svg" />
             </span>
             <span
-              v-if="requiredPreviewMods.length > 9"
-              v-tooltip.top="previewMoreTooltip(requiredPreviewMods.slice(9))"
+              v-if="requiredPreviewMods.length > 5"
+              v-tooltip.top="previewMoreTooltip(requiredPreviewMods.slice(5))"
               class="playlist-mods-settings-dialog__preview-mod"
               :style="{ aspectRatio: MORE_MODS_RATIO }"
               aria-label="More required mods"
@@ -704,7 +707,7 @@ onBeforeUnmount(() => {
           <p>Free mods that players may add to this map.</p>
           <div v-if="allowedPreviewMods.length" class="playlist-mods-settings-dialog__preview" aria-label="Selected allowed mods">
             <span
-              v-for="entry in allowedPreviewMods.slice(0, 9)"
+              v-for="entry in allowedPreviewMods.slice(0, 5)"
               :key="entry.mod.Acronym"
               v-tooltip.top="settingsTooltip(entry.mod, entry.kind)"
               class="playlist-mods-settings-dialog__preview-mod"
@@ -713,8 +716,8 @@ onBeforeUnmount(() => {
               <SvgMarkup :svg="entry.view.svg" />
             </span>
             <span
-              v-if="allowedPreviewMods.length > 9"
-              v-tooltip.top="previewMoreTooltip(allowedPreviewMods.slice(9))"
+              v-if="allowedPreviewMods.length > 5"
+              v-tooltip.top="previewMoreTooltip(allowedPreviewMods.slice(5))"
               class="playlist-mods-settings-dialog__preview-mod"
               :style="{ aspectRatio: MORE_MODS_RATIO }"
               aria-label="More allowed mods"
