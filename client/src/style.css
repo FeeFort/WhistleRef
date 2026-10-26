@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Nunito:wght@700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Nunito:wght@700;800&family=Torus:wght@400;500;600;700;800&display=swap");
 
 :root {
   color-scheme: dark;
@@ -1047,11 +1047,11 @@ html.app-light .app-dialog-mask {
   z-index: 10000;
   max-width: min(18rem, calc(100vw - 1rem));
   padding: 0.42rem 0.68rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--app-border-strong);
   border-radius: 0.4rem;
-  background: #11141d;
+  background: var(--app-surface-raised);
   box-shadow: 0 0.45rem 1.1rem rgba(0, 0, 0, 0.34);
-  color: #fff;
+  color: var(--app-text);
   font-size: 0.72rem;
   line-height: 1.25;
   pointer-events: auto;
@@ -1066,6 +1066,29 @@ html.app-light .app-dialog-mask {
 .app-tooltip > span {
   margin-top: 0.2rem;
   color: rgba(255, 255, 255, 0.78);
+}
+.app-tooltip__mod-settings {
+  min-width: 10rem;
+}
+.app-tooltip__mod-settings--title-only {
+  min-width: max-content;
+}
+.app-tooltip__mod-title {
+  margin-bottom: 0.35rem;
+  color: var(--app-text);
+}
+.app-tooltip__setting-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 0.12rem 0;
+  color: var(--app-muted);
+  white-space: nowrap;
+}
+.app-tooltip__setting-row strong {
+  color: var(--app-text);
+  font-weight: 700;
+  text-align: right;
 }
 .app-tooltip small {
   margin-top: 0.35rem;
