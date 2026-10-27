@@ -20,7 +20,7 @@ import Avatar from "primevue/avatar";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import Message from "primevue/message";
-import { AlertTriangle, ChevronDown, LogIn, LogOut, MessageSquare, Moon, Plus, Settings2, Sun, X } from "@lucide/vue";
+import { Archive, AlertTriangle, ChevronDown, LogIn, LogOut, MessageSquare, Moon, Plus, Settings2, Sun, X } from "@lucide/vue";
 import { useDarkMode } from "../composables/useDarkMode";
 
 const props = defineProps({
@@ -34,7 +34,7 @@ const props = defineProps({
   lazerRooms: { type: Array, default: () => [] },
 });
 
-const emit = defineEmits(["update:open", "logout", "open-settings", "select-chat", "open-create-lobby", "open-add-channel", "close-chat"]);
+const emit = defineEmits(["update:open", "logout", "open-settings", "open-archive", "select-chat", "open-create-lobby", "open-add-channel", "close-chat"]);
 
 const { isDark, toggleDark } = useDarkMode();
 
@@ -74,6 +74,11 @@ const profileMenuItems = computed(() => [
     label: "Settings",
     icon: Settings2,
     command: () => emit("open-settings"),
+  },
+  {
+    label: "Archived chats",
+    icon: Archive,
+    command: () => emit("open-archive"),
   },
   { separator: true },
   {

@@ -17,6 +17,7 @@ import LazerRefereesDialog from "./components/lazer/RefereesDialog.vue";
 import LazerLobbyScoreCard from "./components/lazer/LobbyScoreCard.vue";
 import LazerMappoolCard from "./components/lazer/MappoolCard.vue";
 import AddChannelDialog from "./components/AddChannelDialog.vue";
+import ArchiveModal from "./components/ArchiveModal.vue";
 import CreateLobbyDialog from "./components/CreateLobbyDialog.vue";
 import LoginPage from "./components/LoginPage.vue";
 import LobbyScoreCard from "./components/stable/LobbyScoreCard.vue";
@@ -71,6 +72,7 @@ const osuClientSecret = ref("");
 const osuProfile = ref(null);
 const sidebarOpen = ref(true);
 const settingsOpen = ref(false);
+const archiveOpen = ref(false);
 const updateDialogVisible = ref(false);
 const updateDialogMode = ref("available");
 const updateInfo = ref({ currentVersion: "", latestVersion: "", releaseNotesUrl: "" });
@@ -4042,11 +4044,13 @@ function handleLazerSendResult(result) {
     :lazer-rooms="Object.values(lazerRooms)"
     @logout="handleLogout"
     @open-settings="openSettings"
+    @open-archive="archiveOpen = true"
     @select-chat="selectChat"
     @open-create-lobby="createLobbyDialogOpen = true"
     @open-add-channel="addChannelDialogOpen = true"
     @close-chat="closeActiveChat"
   >
+    <ArchiveModal v-model:visible="archiveOpen" />
     <SettingsModal v-model:visible="settingsOpen">
       <template #app>
         <section class="settings-page__section">
