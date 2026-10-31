@@ -2,7 +2,7 @@
   "name": "WhistleRef",
   "type": "module",
   "private": true,
-  "version": "0.4.0-alpha",
+  "version": "0.5.0-alpha",
   "description": "WhistleRef WebSocket and Bancho IRC bridge",
   "main": "src/index.js",
   "bin": "dist/bundle.js",
