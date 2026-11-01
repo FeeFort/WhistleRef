@@ -2,7 +2,7 @@ import { appendFile, mkdir, readdir, stat, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { prepareLogRecord } from "./loggerData.js";
-import type { FileLoggingOptions, LogFileSink, LogRecord } from "../types.js";
+import type { FileLoggingOptions, LogFileSink, LogRecord } from "../types/index.js";
 
 const activeFiles = new Set<string>();
 

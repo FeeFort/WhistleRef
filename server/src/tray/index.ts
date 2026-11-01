@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { openInBrowser } from "../browser.js";
-import { SysTrayInstance, SysTrayOptions, TrayOptions } from "../types.js";
+import { SysTrayInstance, SysTrayOptions, TrayOptions } from "../types/index.js";
 import { createKdeTray } from "./kdeTray.js";
 
 const log = logger.child("core", "tray");

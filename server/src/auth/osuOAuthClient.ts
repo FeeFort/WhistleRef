@@ -1,7 +1,7 @@
 import { checkApiRateLimit } from "../osu-api/osuApiClient.js";
 import { restRateLimiter } from "../rateLimiter.js";
 import { config } from "../config.js";
-import { OsuOAuthCredentials, OsuOAuthErrorResponse, OsuTokenResponse, OsuTokenSet } from "../types.js";
+import { OsuOAuthCredentials, OsuOAuthErrorResponse, OsuTokenResponse, OsuTokenSet } from "../types/index.js";
 
 const OSU_TOKEN_URL = "https://osu.ppy.sh/oauth/token";
 
@@ -56,7 +56,6 @@ export async function exchangeCode(creds: OsuOAuthCredentials, code: string): Pr
 
     return { accessToken: raw.access_token, refreshToken: raw.refresh_token, expiresAt: Date.now() + raw.expires_in * 1000 };
   } finally {
-    // TODO: Use shared exponential backoff for safe OAuth requests; do not blindly reuse authorization codes.
     release();
   }
 }
@@ -89,7 +88,6 @@ export async function refreshToken(creds: Pick<OsuOAuthCredentials, "clientId" |
 
     return { accessToken: raw.access_token, refreshToken: raw.refresh_token, expiresAt: Date.now() + raw.expires_in * 1000 };
   } finally {
-    // TODO: Use shared exponential backoff for safe OAuth requests; do not blindly reuse authorization codes.
     release();
   }
 }

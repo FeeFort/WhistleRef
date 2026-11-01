@@ -1,6 +1,6 @@
 import { logger } from "./logger/logger.js";
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { ClientMessage } from "./types.js";
+import type { ClientMessage } from "./types/index.js";
 import { WebSocket } from "ws";
 
 export const requestContext = new AsyncLocalStorage<Pick<ClientMessage, "requestId">>();

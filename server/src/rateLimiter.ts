@@ -1,6 +1,6 @@
 import { logger } from "./logger/logger.js";
 import { config } from "./config.js";
-import type { RateLimitConfig, RateLimitEntry, RequestFailure } from "./types.js";
+import type { RateLimitConfig, RateLimitEntry, RequestFailure } from "./types/index.js";
 
 const log = logger.child("core", "rateLimit");
 

@@ -1,6 +1,6 @@
 import { logger } from "../logger/logger.js";
 import { config } from "../config.js";
-import { InternalApiMethod, OsuApiMeResponse, OsuUser } from "../types.js";
+import { InternalApiMethod, OsuApiMeResponse, OsuUser } from "../types/index.js";
 
 import { restRateLimiter } from "../rateLimiter.js";
 import isRetryableError, { hasRetryAfter } from "./retryableErrors.js";

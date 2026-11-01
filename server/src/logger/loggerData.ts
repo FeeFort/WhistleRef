@@ -1,5 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
-import type { LogLevel, LogRecord } from "../types.js";
+import type { LogLevel, LogRecord } from "../types/index.js";
 
 function cleanText(text: string): string {
   return stripVTControlCharacters(text)

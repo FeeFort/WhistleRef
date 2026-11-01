@@ -1,7 +1,7 @@
 import { logger } from "../logger/logger.js";
 import { WebSocket } from "ws";
 import { config } from "../config.js";
-import { ChatNotification, ChatSocketOptions } from "../types.js";
+import { ChatNotification, ChatSocketOptions } from "../types/index.js";
 
 const log = logger.child("lazer", "chatSocket");
 

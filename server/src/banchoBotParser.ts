@@ -23,7 +23,7 @@ import {
   ParsedLobbyCommand,
   PlayerSnapshot,
   Team,
-} from "./types.js";
+} from "./types/index.js";
 
 export const TEAM_MODES: Record<number, TeamMode> = Object.freeze({
   0: "HeadToHead",

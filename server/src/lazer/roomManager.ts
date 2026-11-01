@@ -30,7 +30,7 @@ import type {
   LazerHubEvent,
   PendingChatLoad,
   ChatMessage,
-} from "../types.js";
+} from "../types/index.js";
 import { config } from "../config.js";
 import { fetchChatMessages } from "./chatApi.js";
 import { invokeHub, invokeHubWithRetry } from "./refereeHubClient.js";

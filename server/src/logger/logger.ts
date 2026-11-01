@@ -16,7 +16,7 @@ import type {
   TraceOperationDetails,
   LogSink,
   FileLoggingOptions,
-} from "../types.js";
+} from "../types/index.js";
 
 // Levels go from most severe to most detailed
 export const LOG_LEVELS = ["CRITICAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"] as const;
