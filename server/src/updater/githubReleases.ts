@@ -1,5 +1,5 @@
 import semver from "semver";
-import { GithubAsset, GithubRelease, UpdateInfo } from "../types.js";
+import { GithubAsset, GithubRelease, UpdateInfo } from "../types/index.js";
 
 const GITHUB_OWNER = "FeeFort";
 const GITHUB_REPO = "WhistleRef";

@@ -3,7 +3,7 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import os from "node:os";
 import path from "node:path";
-import type { UpdateInfo } from "../types.js";
+import type { UpdateInfo } from "../types/index.js";
 
 export async function downloadAsset(update: UpdateInfo): Promise<string> {
   const response = await fetch(update.asset.browser_download_url);

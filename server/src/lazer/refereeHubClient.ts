@@ -4,7 +4,7 @@ import { getAccessToken } from "../auth/auth.js";
 import { config } from "../config.js";
 import { logger } from "../logger/logger.js";
 import { backoffDelay, sleep } from "../retry.js";
-import { HubEventHandler, ResyncHandler, HubEventType, LazerHubEvent, HubEventPayloads, LazerStatusHandler } from "../types.js";
+import { HubEventHandler, ResyncHandler, HubEventType, LazerHubEvent, HubEventPayloads, LazerStatusHandler } from "../types/index.js";
 
 const log = logger.child("lazer", "refereeHub");
 

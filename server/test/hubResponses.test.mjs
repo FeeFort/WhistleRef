@@ -8,6 +8,7 @@ const room = {
   name: "Room",
   password: "",
   max_participants: 0,
+  queue_mode: "all_players",
   state: { type: "team_versus", locked: false, slots: null },
   playlist: [{ id: 7, ruleset_id: 3, beatmap_id: 8, required_mods: [], allowed_mods: [], freestyle: true, was_played: false, order: 0 }],
   players: [{ user_id: 3, status: "ready", mods: [{ acronym: "HD", settings: {} }], style: { ruleset_id: null, beatmap_id: null }, team: "red" }],

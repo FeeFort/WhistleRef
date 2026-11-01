@@ -1,4 +1,4 @@
-import { MapResult, PlayerMapResult, RawMatchGame, RawMatchResponse, RawMatchScore, Team, TeamMapResult } from "../types.js";
+import { MapResult, PlayerMapResult, RawMatchGame, RawMatchResponse, RawMatchScore, Team, TeamMapResult } from "../types/index.js";
 
 function buildTeam(scores: RawMatchScore[], team: Team, usernameById: Map<number, string>): TeamMapResult {
   const players: PlayerMapResult[] = scores

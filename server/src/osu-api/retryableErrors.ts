@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { ErrorWithCode, ErrorWithRetryAfter } from "../types.js";
+import { ErrorWithCode, ErrorWithRetryAfter } from "../types/index.js";
 import OsuApiError from "./osuApiError.js";
 
 export const RETRYABLE_NETWORK_ERRORS = new Set([

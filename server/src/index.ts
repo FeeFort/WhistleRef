@@ -10,7 +10,7 @@ import { parseBanchoBotMessage, parseLobbyCommand } from "./banchoBotParser.js";
 import { login as loginOsu, logout as logoutOsu, getAccessToken, restoreSession, getState } from "./auth/auth.js";
 import { fetchApi } from "./osu-api/osuApiClient.js";
 import { config } from "./config.js";
-import { ClientMessage, ConnectionState, IrcCredentials, IrcLine, LobbyState, ParsedBanchoBotMessage, Player, PlayerScore, Team, WinConditionContext } from "./types.js";
+import { ClientMessage, ConnectionState, IrcCredentials, IrcLine, LobbyState, ParsedBanchoBotMessage, Player, PlayerScore, Team, WinConditionContext } from "./types/index.js";
 import { fileURLToPath } from "node:url";
 import { UpdateError, UpdateManager } from "./updater/updateManager.js";
 import { applyPendingUpdate } from "./updater/applyUpdate.js";
@@ -21,7 +21,7 @@ import { addClient, removeClient, sendJson, broadcast, clientCount, requestConte
 import { connectToRefereeHub, disconnectFromRefereeHub } from "./lazer/refereeHubClient.js";
 import { roomManager } from "./lazer/roomManager.js";
 import * as lazerHandlers from "./lazer/handlers.js";
-import type { LazerConnectionStateEvent, LazerSyncStateEvent, LazerRoomsEvent } from "./types.js";
+import type { LazerConnectionStateEvent, LazerSyncStateEvent, LazerRoomsEvent } from "./types/index.js";
 import { ChatSocket } from "./lazer/chatSocket.js";
 
 const launchedAfterUpdate = process.argv.includes("--updated");
@@ -832,14 +832,16 @@ class BanchoConnection {
       this.setState("error", config.authError);
     }
 
-    broadcast({
-      type: "irc_event",
-      raw: line,
-      command: message.command,
-      prefix: message.prefix,
-      nick: getNick(message.prefix),
-      params: message.params,
-    });
+    if (message.command !== "QUIT") {
+      broadcast({
+        type: "irc_event",
+        raw: line,
+        command: message.command,
+        prefix: message.prefix,
+        nick: getNick(message.prefix),
+        params: message.params,
+      });
+    }
 
     if (message.command === "PRIVMSG" && message.params.length >= 2) {
       const target = message.params[0];

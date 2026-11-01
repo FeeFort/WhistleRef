@@ -8,7 +8,7 @@ import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import semver from "semver";
-import { GithubAsset, GithubRelease, UpdateCheckResult, UpdateInfo, UpdateProgressSender, UpdaterState } from "../types.js";
+import { GithubAsset, GithubRelease, UpdateCheckResult, UpdateInfo, UpdateProgressSender, UpdaterState } from "../types/index.js";
 
 declare const __APP_VERSION__: string;
 

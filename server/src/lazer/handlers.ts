@@ -3,7 +3,7 @@ import { sendJson } from "../wsGateway.js";
 import { invokeHub } from "./refereeHubClient.js";
 import { roomManager } from "./roomManager.js";
 import { sendChatMessage } from "./chatApi.js";
-import type { ClientMessage, ListRoomsResponse, LazerChatStateEvent } from "../types.js";
+import type { ClientMessage, ListRoomsResponse, LazerChatStateEvent } from "../types/index.js";
 
 async function ack(client: WebSocket, message: ClientMessage, result?: unknown): Promise<void> {
   sendJson(client, { type: "ack", received: message.type, ...(message.requestId !== undefined ? { requestId: message.requestId } : {}), ...(result !== undefined ? { result } : {}) });

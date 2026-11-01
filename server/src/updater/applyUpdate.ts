@@ -1,4 +1,4 @@
-import { ApplyUpdate } from "../types.js";
+import { ApplyUpdate } from "../types/index.js";
 import { appendFile } from "node:fs/promises";
 import os from "node:os";
 import { applyLinuxUpdate } from "./applyUpdate.linux.js";

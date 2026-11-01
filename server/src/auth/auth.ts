@@ -1,7 +1,7 @@
 import { logger } from "../logger/logger.js";
 import { fetchApi, fetchMe } from "../osu-api/osuApiClient.js";
 import OsuApiError from "../osu-api/osuApiError.js";
-import { AuthState, NotAuthenticatedReason, OsuOAuthCredentials, OsuUser } from "../types.js";
+import { AuthState, NotAuthenticatedReason, OsuOAuthCredentials, OsuUser } from "../types/index.js";
 import { exchangeCode, OsuOAuthError, refreshToken as refreshOsuToken } from "./osuOAuthClient.js";
 import { saveSession, loadSession, clearSession } from "./secureStore.js";
 
