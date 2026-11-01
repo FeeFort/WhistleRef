@@ -1,6 +1,6 @@
 import { inspect, stripVTControlCharacters } from "node:util";
 import stringWidth from "string-width";
-import type { LogFormatOptions, LogLevel, LogRecord, StartupBannerInfo } from "../types.js";
+import type { LogFormatOptions, LogLevel, LogRecord, StartupBannerInfo } from "../types/index.js";
 
 const icons: Record<LogLevel, string> = { CRITICAL: "‼", ERROR: "✖", WARN: "▲", INFO: "ℹ", DEBUG: "■", TRACE: "❯" };
 const levelColors: Record<LogLevel, string> = { CRITICAL: "1;91", ERROR: "31", WARN: "38;5;208", INFO: "34", DEBUG: "38;5;153", TRACE: "38;5;248" };

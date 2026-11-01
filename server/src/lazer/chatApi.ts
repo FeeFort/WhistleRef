@@ -1,7 +1,7 @@
 import { logger } from "../logger/logger.js";
 import { getAccessToken } from "../auth/auth.js";
 import { fetchApi } from "../osu-api/osuApiClient.js";
-import type { ChatMessage } from "../types.js";
+import type { ChatMessage } from "../types/index.js";
 
 const log = logger.child("lazer", "chatApi");
 

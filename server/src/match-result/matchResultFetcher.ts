@@ -2,7 +2,7 @@ import { logger } from "../logger/logger.js";
 import { getAccessToken } from "../auth/auth.js";
 import { fetchApi } from "../osu-api/osuApiClient.js";
 import { parseLastMapResult } from "./matchResultParser.js";
-import type { MapResult, RawMatchResponse } from "../types.js";
+import type { MapResult, RawMatchResponse } from "../types/index.js";
 
 const log = logger.child("stable", "matchResult");
 

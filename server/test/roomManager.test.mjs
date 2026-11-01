@@ -17,6 +17,7 @@ const snapshot = (roomId, name = "Fresh") => ({
   name,
   password: "",
   max_participants: 4,
+  queue_mode: "all_players",
   state: { type: "head_to_head", locked: false, slots: null },
   playlist: [],
   players: [],

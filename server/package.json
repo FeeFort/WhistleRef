@@ -9,7 +9,6 @@
   "scripts": {
     "test": "node test/run.mjs",
     "start": "npm run build --prefix ../client && tsx src/index.js --verbose",
-    "bundle": "esbuild src/index.js --bundle --platform=node --outfile=dist/bundle.js",
     "build": "node build.js",
     "build:debug": "node build.js -d",
     "lint": "eslint .",
