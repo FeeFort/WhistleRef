@@ -87,6 +87,46 @@ test("chat and message repositories preserve constraints and ordering", (t) => {
   assert.equal(countMessages(database, lazer.id), 0);
 });
 
+test("message inserts ignore duplicates while preserving constraints", (t) => {
+  const database = openDatabase(":memory:");
+  t.after(() => closeDatabase(database));
+  const createdAt = "2026-11-01T00:00:00.000Z";
+  const chat = createChat(database, { platform: "lazer", external_id: 1, title: "Lazer", created_at: createdAt });
+  const message = (externalId, text = "message", kind = "message") => ({
+    chat_id: chat.id,
+    external_id: externalId,
+    author: "Ref",
+    sender_id: null,
+    text,
+    created_at: createdAt,
+    kind,
+  });
+
+  assert.equal(insertMessage(database, message(1)), 1);
+  assert.equal(insertMessage(database, message(1, "duplicate")), 0);
+  assert.equal(countMessages(database, chat.id), 1);
+
+  assert.equal(insertMessages(database, [message(1, "duplicate"), message(2, "new")]), 1);
+  assert.equal(countMessages(database, chat.id), 2);
+
+  assert.equal(insertMessage(database, message(null, "null one")), 1);
+  assert.equal(insertMessage(database, message(null, "null two")), 1);
+  assert.equal(insertMessages(database, [message(null, "null three"), message(null, "null four")]), 2);
+  assert.equal(countMessages(database, chat.id), 6);
+
+  assert.throws(() => insertMessage(database, message(3, "invalid kind", "invalid")), /CHECK constraint failed/);
+  assert.throws(() => insertMessages(database, [message(4, "invalid kind", "invalid")]), /CHECK constraint failed/);
+  assert.throws(() => insertMessage(database, message(5, null)), /NOT NULL constraint failed/);
+  assert.throws(() => insertMessages(database, [message(6, null)]), /NOT NULL constraint failed/);
+
+  const beforeBatch = countMessages(database, chat.id);
+  assert.throws(() => insertMessages(database, [message(7, "valid"), message(8, null)]), /NOT NULL constraint failed/);
+  assert.equal(countMessages(database, chat.id), beforeBatch);
+
+  assert.throws(() => insertMessage(database, { ...message(9), chat_id: 999 }), /FOREIGN KEY constraint failed/);
+  assert.throws(() => insertMessages(database, [{ ...message(10), chat_id: 999 }]), /FOREIGN KEY constraint failed/);
+});
+
 test("chat status timestamps, archive operation, and lobby state", (t) => {
   const database = openDatabase(":memory:");
   t.after(() => closeDatabase(database));

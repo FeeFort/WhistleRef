@@ -1,22 +1,21 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Message, NewMessage } from "../types/index.js";
 
-function performInsert(database: DatabaseSync, message: NewMessage, ignoreDuplicate: boolean): number {
-  const verb = ignoreDuplicate ? "INSERT OR IGNORE" : "INSERT";
+function performInsert(database: DatabaseSync, message: NewMessage): number {
   const result = database
-    .prepare(`${verb} INTO messages (chat_id, external_id, author, sender_id, text, created_at, kind) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .prepare("INSERT INTO messages (chat_id, external_id, author, sender_id, text, created_at, kind) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(chat_id, external_id) DO NOTHING")
     .run(message.chat_id, message.external_id, message.author, message.sender_id, message.text, message.created_at, message.kind);
   return Number(result.changes);
 }
 
 export function insertMessage(database: DatabaseSync, message: NewMessage): number {
-  return performInsert(database, message, false);
+  return performInsert(database, message);
 }
 
 export function insertMessages(database: DatabaseSync, messages: readonly NewMessage[]): number {
   database.exec("BEGIN");
   try {
-    const inserted = messages.reduce((count, message) => count + performInsert(database, message, true), 0);
+    const inserted = messages.reduce((count, message) => count + performInsert(database, message), 0);
     database.exec("COMMIT");
     return inserted;
   } catch (error) {
