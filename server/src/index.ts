@@ -25,6 +25,7 @@ import type { LazerConnectionStateEvent, LazerSyncStateEvent, LazerRoomsEvent } 
 import { ChatSocket } from "./lazer/chatSocket.js";
 import { openDatabase } from "./db/database.js";
 import { ChatService } from "./chats/chatService.js";
+import { StableChatBridge } from "./chats/stableChatBridge.js";
 
 const launchedAfterUpdate = process.argv.includes("--updated");
 const sessionLog = logger.child("lazer", "session");
@@ -38,6 +39,7 @@ const updateLog = logger.child("core", "updater");
 const chatServiceLog = logger.child("core", "chatService");
 let chatSocket: ChatSocket | null = null;
 let chatService!: ChatService;
+let stableChatBridge!: StableChatBridge;
 let deferredChatEvents: unknown[] | null = null;
 
 function emitChatEvent(event: unknown): void {
@@ -352,7 +354,16 @@ class BanchoConnection {
   setState(state: ConnectionState, detail: string | null = null): void {
     ircLog.log(state === "error" ? "WARN" : "INFO", "Connection state changed", { previous: this.state, state, detail });
     this.state = state;
+    stableChatBridge?.onConnectionState(state);
     this.sendStatus(null, detail);
+  }
+
+  ownNick(): string | null {
+    return this.credentials?.login ?? null;
+  }
+
+  isReady(): boolean {
+    return this.state === "ready";
   }
 
   isOwnNick(nick: string | null): boolean {
@@ -573,6 +584,7 @@ class BanchoConnection {
       resultRedScore = outcome.result?.beatmapTeamRedScore ?? teamRedScore;
       resultBlueScore = outcome.result?.beatmapTeamBlueScore ?? teamBlueScore;
       scoreDifference = outcome.result?.scoreDifference ?? (winnerTeam ? Math.abs(resultRedScore - resultBlueScore) : 0);
+      for (const text of outcome.systemMessages) stableChatBridge?.onSystemLine(channel, text);
       broadcast({
         type: "win_condition_result",
         channel: channel.replace(/^:/, ""),
@@ -626,16 +638,19 @@ class BanchoConnection {
         const parsed = parseBanchoBotMessage(`Room name: ${name}`);
         if (parsed?.type !== "room") throw new Error("Unable to parse the room title returned by osu! API.");
         this.updateLobbyState(channel, parsed.value);
+        stableChatBridge?.onTitle(channel, parsed.value.name);
         return;
       } catch (error) {
         lastError = error;
         const message = error instanceof Error ? error.message : String(error);
         const retryable = /timed out|timeout|fetch failed|network|socket|connect/i.test(message);
         if (!retryable || attempt >= 2) {
+          const text = `Unable to load the room title from osu! API after ${attempt + 1} attempt${attempt ? "s" : ""}: ${message}. Falling back to IRC.`;
+          stableChatBridge?.onSystemLine(channel, text);
           broadcast({
             type: "lobby_system_message",
             channel: channel.replace(/^:/, ""),
-            text: `Unable to load the room title from osu! API after ${attempt + 1} attempt${attempt ? "s" : ""}: ${message}. Falling back to IRC.`,
+            text,
           });
           break;
         }
@@ -647,10 +662,12 @@ class BanchoConnection {
     try {
       this.sendMessage(channel, "!mp settings");
     } catch (error) {
+      const text = `Unable to request the room title through IRC: ${(error as Error).message}`;
+      stableChatBridge?.onSystemLine(channel, text);
       broadcast({
         type: "lobby_system_message",
         channel: channel.replace(/^:/, ""),
-        text: `Unable to request the room title through IRC: ${(error as Error).message}`,
+        text,
       });
     }
   }
@@ -676,6 +693,7 @@ class BanchoConnection {
         host: null,
         ...parsed.value,
       });
+      stableChatBridge?.onTitle(channel, parsed.value.name);
     } else if (parsed.type === "settings" || parsed.type === "size") {
       this.updateLobbyState(channel, parsed.value);
       if (parsed.type === "settings" && this.pendingAutoSettings.has(normalizeChannel(channel))) {
@@ -840,6 +858,10 @@ class BanchoConnection {
       this.setState("ready");
     }
 
+    if (/^[45]\d\d$/.test(message.command)) {
+      for (const param of message.params) stableChatBridge?.onJoinFailed(param);
+    }
+
     if (["433", "451", "464"].includes(message.command)) {
       this.setState("error", config.authError);
     }
@@ -868,14 +890,20 @@ class BanchoConnection {
       if (isMultiplayerChannel(channel)) {
         this.handleLobbyMessage(channel, nick, text);
       }
-      if (!this.consumeAutoSettings(channel, nick, text)) {
+      const consumed = this.consumeAutoSettings(channel, nick, text);
+      const timestamp = new Date().toISOString();
+      if (!consumed && isMultiplayerChannel(channel)) {
+        stableChatBridge?.onChannelMessage(channel, nick, text, timestamp);
+        // TODO: remove this legacy broadcast in the client migration task.
+      }
+      if (!consumed) {
         broadcast({
           type: "message",
           channel,
           nick,
           text,
           isDirectMessage,
-          timestamp: new Date().toISOString(),
+          timestamp,
         });
       }
     }
@@ -887,8 +915,10 @@ class BanchoConnection {
       if (isMultiplayerChannel(channel) && this.isOwnNick(nick)) {
         if (message.command === "JOIN") {
           this.getLobbyState(channel, true);
+          stableChatBridge?.onOwnJoin(channel);
         } else {
           this.closeLobby(channel);
+          stableChatBridge?.onOwnPart(channel);
         }
       }
       broadcast({
@@ -915,6 +945,7 @@ class BanchoConnection {
 
   sendMessage(channel: string, text: string): void {
     this.sendRaw(`PRIVMSG ${channel} :${text}`);
+    if (isMultiplayerChannel(channel)) stableChatBridge?.onOutgoingMessage(channel, text);
     if (isMultiplayerChannel(channel)) {
       const command = parseLobbyCommand(text);
       if (command) this.updateLobbyState(channel, command.value);
@@ -1655,6 +1686,12 @@ try {
     onMessage: (message) => emitChatEvent({ type: "chat_message", message }),
     onSettingsUpdated: (settings) => emitChatEvent({ type: "settings_updated", settings }),
   });
+  stableChatBridge = new StableChatBridge({
+    chatService,
+    irc: banchoConnection,
+    logger: ircLog,
+  });
+  chatService.registerPlatformAdapter("stable", { detach: (chat) => stableChatBridge.detach(chat) });
   chatService.startup();
 } catch (error) {
   chatServiceLog.critical("Chat database could not be opened", { error });
@@ -1672,6 +1709,7 @@ function shutdown(signal?: string): void {
     process.stdin.setRawMode(false);
   }
   logger.separator(`Shutting down${signal ? ` (${signal})` : ""}`);
+  if (typeof stableChatBridge !== "undefined") stableChatBridge.setShuttingDown();
   banchoConnection.logout();
 
   for (const client of webSocketServer.clients) {
