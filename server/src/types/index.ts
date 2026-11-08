@@ -10,3 +10,4 @@ export * from "./match-result.js";
 export * from "./lazer.js";
 export * from "./rate-limiter.js";
 export * from "./db.js";
+export * from "./chats.js";

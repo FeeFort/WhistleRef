@@ -115,6 +115,7 @@ test("message inserts ignore duplicates while preserving constraints", (t) => {
   assert.equal(countMessages(database, chat.id), 6);
 
   assert.throws(() => insertMessage(database, message(3, "invalid kind", "invalid")), /CHECK constraint failed/);
+  assert.equal(insertMessage(database, message(11, "event", "event")), 1);
   assert.throws(() => insertMessages(database, [message(4, "invalid kind", "invalid")]), /CHECK constraint failed/);
   assert.throws(() => insertMessage(database, message(5, null)), /NOT NULL constraint failed/);
   assert.throws(() => insertMessages(database, [message(6, null)]), /NOT NULL constraint failed/);

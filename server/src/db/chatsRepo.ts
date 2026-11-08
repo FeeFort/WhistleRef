@@ -16,6 +16,11 @@ export function getChat(database: DatabaseSync, id: number): Chat | undefined {
   return database.prepare("SELECT * FROM chats WHERE id = ?").get(id) as unknown as Chat | undefined;
 }
 
+export function updateChatTitle(database: DatabaseSync, id: number, title: string): Chat | undefined {
+  database.prepare("UPDATE chats SET title = ? WHERE id = ?").run(title, id);
+  return getChat(database, id);
+}
+
 export function listChats(database: DatabaseSync, status?: ChatStatus): Chat[] {
   return (status ? database.prepare("SELECT * FROM chats WHERE status = ? ORDER BY id").all(status) : database.prepare("SELECT * FROM chats ORDER BY id").all()) as unknown as Chat[];
 }

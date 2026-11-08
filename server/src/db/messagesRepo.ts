@@ -32,6 +32,18 @@ export function getMessagesPage(database: DatabaseSync, chatId: number, limit: n
   return (rows as unknown as Message[]).reverse();
 }
 
+export function getMessage(database: DatabaseSync, id: number): Message | undefined {
+  return database.prepare("SELECT * FROM messages WHERE id = ?").get(id) as unknown as Message | undefined;
+}
+
+export function findMessageByExternalId(database: DatabaseSync, chatId: number, externalId: number): Message | undefined {
+  return database.prepare("SELECT * FROM messages WHERE chat_id = ? AND external_id = ?").get(chatId, externalId) as unknown as Message | undefined;
+}
+
+export function getLatestMessage(database: DatabaseSync, chatId: number): Message | undefined {
+  return database.prepare("SELECT * FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1").get(chatId) as unknown as Message | undefined;
+}
+
 export function getHighestExternalId(database: DatabaseSync, chatId: number): number | null {
   const row = database.prepare("SELECT MAX(external_id) AS highest FROM messages WHERE chat_id = ?").get(chatId) as { highest: number | null };
   return row.highest;

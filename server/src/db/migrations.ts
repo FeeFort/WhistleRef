@@ -25,7 +25,7 @@ const migrations: ReadonlyArray<(database: DatabaseSync) => void> = [
         sender_id INTEGER NULL,
         text TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        kind TEXT NOT NULL CHECK (kind IN ('message', 'action', 'system', 'roll', 'service')),
+        kind TEXT NOT NULL CHECK (kind IN ('message', 'action', 'system', 'roll', 'service', 'event')),
         UNIQUE (chat_id, external_id)
       );
       CREATE INDEX messages_chat_id_id ON messages (chat_id, id);
