@@ -23,6 +23,8 @@ import { roomManager } from "./lazer/roomManager.js";
 import * as lazerHandlers from "./lazer/handlers.js";
 import type { LazerConnectionStateEvent, LazerSyncStateEvent, LazerRoomsEvent } from "./types/index.js";
 import { ChatSocket } from "./lazer/chatSocket.js";
+import { openDatabase } from "./db/database.js";
+import { ChatService } from "./chats/chatService.js";
 
 const launchedAfterUpdate = process.argv.includes("--updated");
 const sessionLog = logger.child("lazer", "session");
@@ -33,7 +35,21 @@ const authLog = logger.child("core", "auth");
 const apiLog = logger.child("core", "osuApi");
 const wsLog = logger.child("core", "webSocket");
 const updateLog = logger.child("core", "updater");
+const chatServiceLog = logger.child("core", "chatService");
 let chatSocket: ChatSocket | null = null;
+let chatService!: ChatService;
+let deferredChatEvents: unknown[] | null = null;
+
+function emitChatEvent(event: unknown): void {
+  if (deferredChatEvents) deferredChatEvents.push(event);
+  else broadcast(event);
+}
+
+function flushChatEvents(): void {
+  const events = deferredChatEvents ?? [];
+  deferredChatEvents = null;
+  for (const event of events) broadcast(event);
+}
 
 function startChatSocket(): void {
   if (shuttingDown) return;
@@ -1096,6 +1112,16 @@ function validateMessage(message: unknown): string | null {
     check_update: () => null,
     start_update: () => null,
     cancel_update: () => null,
+    chats_list: () => {
+      if (message.statuses !== undefined && (!Array.isArray(message.statuses) || message.statuses.some((status) => !["active", "closed", "archived"].includes(String(status)))))
+        return "statuses must contain only active, closed, or archived values.";
+      return null;
+    },
+    chat_history: () => (Number.isSafeInteger(message.chatId) && (message.chatId as number) > 0 ? null : "chatId must be a positive integer."),
+    chat_archive: () => (Number.isSafeInteger(message.chatId) && (message.chatId as number) > 0 ? null : "chatId must be a positive integer."),
+    chat_delete: () => (Array.isArray(message.chatIds) && message.chatIds.every((id) => Number.isSafeInteger(id) && (id as number) > 0) ? null : "chatIds must be an array of positive integers."),
+    settings_get: () => null,
+    settings_set: () => (isNonEmptyString(message.key) && Object.hasOwn(message, "value") ? null : "key must be a non-empty string and value is required."),
     confirm_install: () => null,
     test_win_condition: () => {
       if (!isNonEmptyString(message.slotId) || typeof message.source !== "string" || !isRecord(message.sampleContext)) return "slotId, source and sampleContext are required.";
@@ -1476,6 +1502,52 @@ function handleClientMessage(client: WebSocket, rawMessage: unknown): void {
     check_update: handleCheckUpdate,
     start_update: handleStartUpdate,
     cancel_update: handleCancelUpdate,
+    chats_list: (client, message) => sendJson(client, { type: "chats_list_response", chats: chatService.listChats((message as Extract<ClientMessage, { type: "chats_list" }>).statuses) }),
+    chat_history: (client, message) => {
+      try {
+        const { chatId } = message as Extract<ClientMessage, { type: "chat_history" }>;
+        sendJson(client, { type: "chat_history_response", chatId, messages: chatService.getChatHistory(chatId) });
+      } catch (error) {
+        sendJson(client, { type: "error", message: (error as Error).message });
+      }
+    },
+    chat_archive: (client, message) => {
+      deferredChatEvents = [];
+      try {
+        chatService.archiveChat((message as Extract<ClientMessage, { type: "chat_archive" }>).chatId);
+        sendJson(client, { type: "ack", received: message.type });
+      } catch (error) {
+        sendJson(client, { type: "error", message: (error as Error).message });
+      } finally {
+        flushChatEvents();
+      }
+    },
+    chat_delete: (client, message) => {
+      deferredChatEvents = [];
+      try {
+        const { chatIds } = message as Extract<ClientMessage, { type: "chat_delete" }>;
+        const known = new Set(chatService.listChats().map((chat) => chat.id));
+        const unknown = [...new Set(chatIds)].filter((id) => !known.has(id));
+        if (unknown.length) throw new Error(`Unknown chats: ${unknown.join(", ")}`);
+        const { skipped } = chatService.deleteChats(chatIds);
+        if (skipped.length) throw new Error(`Chats were not archived and could not be deleted: ${skipped.join(", ")}`);
+        sendJson(client, { type: "ack", received: message.type });
+      } catch (error) {
+        sendJson(client, { type: "error", message: (error as Error).message });
+      } finally {
+        flushChatEvents();
+      }
+    },
+    settings_get: (client) => sendJson(client, { type: "settings_response", settings: chatService.getSettings() }),
+    settings_set: (client, message) => {
+      try {
+        const { key, value } = message as Extract<ClientMessage, { type: "settings_set" }>;
+        chatService.setSetting(key, value);
+        sendJson(client, { type: "ack", received: message.type });
+      } catch (error) {
+        sendJson(client, { type: "error", message: (error as Error).message });
+      }
+    },
     confirm_install: handleConfirmInstall,
     test_win_condition: handleTestWinCondition,
     lazer_make_room: lazerHandlers.handleLazerMakeRoom,
@@ -1576,6 +1648,19 @@ httpServer.listen(config.httpPort, config.httpHost, () => {
   })();
 });
 
+try {
+  chatService = new ChatService(openDatabase(), {
+    onChatUpdated: (chat) => emitChatEvent({ type: "chat_updated", chat }),
+    onChatDeleted: (chatId) => emitChatEvent({ type: "chat_deleted", chatId }),
+    onMessage: (message) => emitChatEvent({ type: "chat_message", message }),
+    onSettingsUpdated: (settings) => emitChatEvent({ type: "settings_updated", settings }),
+  });
+  chatService.startup();
+} catch (error) {
+  chatServiceLog.critical("Chat database could not be opened", { error });
+  void logger.flush().finally(() => process.exit(1));
+}
+
 createTray({ port: config.httpPort, onQuit: () => shutdown("tray") });
 
 function shutdown(signal?: string): void {
@@ -1601,12 +1686,14 @@ function shutdown(signal?: string): void {
     pendingClosures -= 1;
     logger.trace("Component closure completed", { component, pendingClosures });
     if (pendingClosures === 0) {
+      chatService.shutdown();
       void logger.flush().finally(() => process.exit(0));
     }
   };
 
   const shutdownTimer = setTimeout(() => {
     logger.warn("Shutdown timed out, forcing exit", { pendingClosures });
+    chatService.shutdown();
     void logger.flush().finally(() => process.exit(0));
   }, 5000);
   shutdownTimer.unref();

@@ -1,4 +1,6 @@
 import type { AllowedMethods } from "./osu-api.js";
+import type { ChatStatus } from "./db.js";
+import type { ChatSettings, ChatWire, MessageWire } from "./chats.js";
 import type {
   AddPlaylistItemRequest,
   ChangeRoomSettingsRequest,
@@ -15,6 +17,15 @@ import type {
 
 //WS message type
 export type ClientMessage = ClientCommand & { requestId?: string };
+
+export type ChatServerMessage =
+  | { type: "chats_list_response"; chats: ChatWire[]; requestId?: string }
+  | { type: "chat_history_response"; chatId: number; messages: MessageWire[]; requestId?: string }
+  | { type: "settings_response"; settings: ChatSettings; requestId?: string }
+  | { type: "chat_updated"; chat: ChatWire }
+  | { type: "chat_deleted"; chatId: number }
+  | { type: "chat_message"; message: MessageWire }
+  | { type: "settings_updated"; settings: ChatSettings };
 
 export type ClientCommand =
   | { type: "login"; login: string; password: string }
@@ -33,6 +44,12 @@ export type ClientCommand =
   | { type: "check_update" }
   | { type: "start_update" }
   | { type: "cancel_update" }
+  | { type: "chats_list"; statuses?: ChatStatus[] }
+  | { type: "chat_history"; chatId: number }
+  | { type: "chat_archive"; chatId: number }
+  | { type: "chat_delete"; chatIds: number[] }
+  | { type: "settings_get" }
+  | { type: "settings_set"; key: string; value: unknown }
   | { type: "confirm_install" }
   | { type: "test_win_condition"; slotId: string; source: string; sampleContext: Record<string, unknown> }
   | {

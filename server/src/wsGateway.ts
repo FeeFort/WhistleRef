@@ -22,7 +22,13 @@ export function removeClient(client: WebSocket): void {
 export function sendJson(client: WebSocket, payload: unknown): void {
   if (client.readyState === WebSocket.OPEN) {
     const requestId = requestContext.getStore()?.requestId;
-    if (requestId !== undefined && typeof payload === "object" && payload !== null && "type" in payload && (payload.type === "ack" || payload.type === "error")) {
+    if (
+      requestId !== undefined &&
+      typeof payload === "object" &&
+      payload !== null &&
+      "type" in payload &&
+      (payload.type === "ack" || payload.type === "error" || payload.type === "chats_list_response" || payload.type === "chat_history_response" || payload.type === "settings_response")
+    ) {
       payload = { ...payload, requestId };
     }
     log.trace("> Client message", () => ({ payload: JSON.stringify(payload, (key, value) => (/password|token|secret|authorization|^code$/i.test(key) ? "[redacted]" : value)) }));

@@ -40,6 +40,18 @@ export function archiveClosedChats(database: DatabaseSync, timestamp: string): n
   return Number(database.prepare("UPDATE chats SET status = 'archived', archived_at = ? WHERE status = 'closed'").run(timestamp).changes);
 }
 
+export function deleteChats(database: DatabaseSync, ids: readonly number[]): number[] {
+  const deleted: number[] = [];
+  const statement = database.prepare("DELETE FROM chats WHERE id = ? AND status = 'archived'");
+  for (const id of ids) if (Number(statement.run(id).changes) > 0) deleted.push(id);
+  return deleted;
+}
+
+export function deleteArchivedOlderThan(database: DatabaseSync, cutoffIso: string): number[] {
+  const ids = (database.prepare("SELECT id FROM chats WHERE status = 'archived' AND archived_at < ? ORDER BY id").all(cutoffIso) as { id: number }[]).map((row) => row.id);
+  return deleteChats(database, ids);
+}
+
 export function readLobbyState<T = unknown>(database: DatabaseSync, id: number): T | null {
   const row = database.prepare("SELECT lobby_state FROM chats WHERE id = ?").get(id) as { lobby_state: string | null } | undefined;
   return row?.lobby_state == null ? null : (JSON.parse(row.lobby_state) as T);

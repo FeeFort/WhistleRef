@@ -29,6 +29,7 @@ const migrations: ReadonlyArray<(database: DatabaseSync) => void> = [
         UNIQUE (chat_id, external_id)
       );
       CREATE INDEX messages_chat_id_id ON messages (chat_id, id);
+      CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
   },
 ];

@@ -40,3 +40,8 @@ export interface Message {
 }
 
 export type NewMessage = Omit<Message, "id">;
+
+export interface SettingRow {
+  key: string;
+  value: string;
+}

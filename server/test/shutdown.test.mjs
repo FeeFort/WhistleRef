@@ -18,6 +18,7 @@ for (const failed of [false, true]) {
       logger: { separator() {}, warn() {}, trace() {}, flush: async () => {} },
       sessionLog: { warn() {} },
       banchoConnection: { logout() {} },
+      chatService: { shutdown() {} },
       webSocketServer: { clients: [], close: (callback) => closures.push(callback) },
       httpServer: { listening: true, close: (callback) => closures.push(callback) },
       setTimeout: () => ({ unref() {} }),
