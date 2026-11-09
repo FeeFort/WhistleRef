@@ -1,3 +1,7 @@
+import { logger } from "../logger/logger.js";
+
+const log = logger.child("core", "lobbyState");
+
 export type LobbyMatch = {
   teamRed?: string;
   teamBlue?: string;
@@ -54,7 +58,7 @@ function defaultDocument(): LobbyStateDocument {
 
 export function normalize(raw: unknown): LobbyStateDocument {
   if (raw === null || raw === undefined || raw === "") {
-    console.warn("Missing lobby state; using the default lobby state.");
+    log.warn("Missing lobby state; using the default lobby state.");
     return defaultDocument();
   }
   let value: unknown = raw;
@@ -62,17 +66,17 @@ export function normalize(raw: unknown): LobbyStateDocument {
     try {
       value = JSON.parse(raw);
     } catch {
-      console.warn("Invalid lobby state JSON; using the default lobby state.");
+      log.warn("Invalid lobby state JSON; using the default lobby state.");
       return defaultDocument();
     }
   }
   if (!isPlainObject(value) || !Number.isInteger(value.v)) {
-    console.warn("Invalid lobby state document; using the default lobby state.");
+    log.warn("Invalid lobby state document; using the default lobby state.");
     return defaultDocument();
   }
   if ((value.v as number) > 1) return value as LobbyStateDocument;
   if (value.v !== 1) {
-    console.warn("Unsupported lobby state version; using the default lobby state.");
+    log.warn("Unsupported lobby state version; using the default lobby state.");
     return defaultDocument();
   }
   const match = isPlainObject(value.match) ? value.match : {};
