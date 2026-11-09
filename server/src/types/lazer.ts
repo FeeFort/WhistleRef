@@ -324,6 +324,7 @@ export interface LazerRoomErrorEvent {
 export type LazerStatusEvent = LazerConnectionStateEvent | LazerSyncStateEvent | LazerRoomErrorEvent;
 export type LazerStatusHandler = (event: LazerStatusEvent) => void;
 
+// TODO(client-migration): Remove this old chat state event once the backend backfills history itself.
 export type LazerChatStateEvent = {
   type: "lazer_chat_state";
   roomId: number;

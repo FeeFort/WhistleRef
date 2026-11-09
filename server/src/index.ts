@@ -77,7 +77,7 @@ function startChatSocket(): void {
           const channelId = Number((message as Record<string, unknown>)?.channel_id);
           const room = Number.isInteger(channelId) ? roomManager.getRoomByChatChannel(channelId) : undefined;
           if (room) {
-            // TODO: Remove this temporary broadcast after the client migration to chat_message.
+            // TODO(client-migration): Remove this legacy event after the client uses chat_message.
             broadcast({ type: "lazer_chat_message", roomId: room.room_id, message, users: data?.users ?? [] });
             lazerChatBridge?.onLiveMessage(room.room_id, message as Record<string, unknown>, Array.isArray(data?.users) ? data.users : []);
           }
@@ -300,6 +300,7 @@ async function startLazerSession(): Promise<void> {
       lazerChatBridge?.onRoomChanged(room);
     },
     (roomId, reason) => {
+      // TODO(client-migration): Remove this legacy event after the client uses chat_updated.
       if (reason === "closed" || reason === "reset") broadcast({ type: "lazer_room_closed", roomId });
       lazerChatBridge?.onRoomRemoved(roomId, reason);
     },
@@ -404,6 +405,7 @@ class BanchoConnection {
 
   sendLobbyState(channel: string, state: LobbyState | undefined = this.lobbyStates.get(normalizeChannel(channel)), client: WebSocket | null = null): void {
     if (!state) return;
+    // TODO(client-migration): Remove this legacy event after the client uses chat_lobby_state_updated.
     const payload = {
       type: "lobby_state",
       channel: channel.replace(/^:/, ""),
@@ -927,9 +929,9 @@ class BanchoConnection {
       const timestamp = new Date().toISOString();
       if (!consumed && isMultiplayerChannel(channel)) {
         stableChatBridge?.onChannelMessage(channel, nick, text, timestamp);
-        // TODO: remove this legacy broadcast in the client migration task.
       }
       if (!consumed) {
+        // TODO(client-migration): Remove this legacy event for multiplayer channels after the client uses chat_message.
         broadcast({
           type: "message",
           channel,
@@ -956,6 +958,7 @@ class BanchoConnection {
           stableChatBridge?.onOwnPart(channel);
         }
       }
+      // TODO(client-migration): Remove these legacy events after the client uses chat_updated.
       broadcast({
         type: message.command === "JOIN" ? "channel_joined" : "channel_parted",
         channel,
@@ -1129,12 +1132,14 @@ function validateMessage(message: unknown): string | null {
       }
       return null;
     },
+    // TODO(client-migration): Replace this validator with chat_archive because both handlers are identical.
     leave_channel: () => {
       if (!isNonEmptyString(message.channel)) {
         return "channel must be a non-empty string.";
       }
       return null;
     },
+    // TODO(client-migration): Replace this validator with chat_archive because both handlers are identical.
     part_channel: () => {
       if (!isNonEmptyString(message.channel)) {
         return "channel must be a non-empty string.";
@@ -1145,6 +1150,7 @@ function validateMessage(message: unknown): string | null {
       if (!isNonEmptyString(message.channel)) return "channel must be a non-empty string.";
       return null;
     },
+    // TODO(client-migration): Decide whether to re-key this validator to chatId for the new protocol.
     set_lobby_score: () => {
       if (!isNonEmptyString(message.channel)) {
         return "channel must be a non-empty string.";
@@ -1157,6 +1163,7 @@ function validateMessage(message: unknown): string | null {
       }
       return null;
     },
+    // TODO(client-migration): Decide whether to re-key this validator to chatId for the new protocol.
     set_lobby_settings: () => {
       if (!isNonEmptyString(message.channel)) {
         return "channel must be a non-empty string.";
@@ -1214,8 +1221,10 @@ function validateMessage(message: unknown): string | null {
         return "max_participants must be a non-negative integer.";
       return null;
     },
+    // TODO(client-migration): Remove this validator once the backend backfills chat history itself.
     lazer_load_chat: () => validateLazerRoomId(message),
     lazer_join_room: () => validateLazerRoomId(message),
+    // TODO(client-migration): Remove this validator because the referee hub has no LeaveRoom method.
     lazer_leave_room: () => validateLazerRoomId(message),
     lazer_close_room: () => validateLazerRoomId(message),
     lazer_invite_player: () => validateLazerUserAction(message),
@@ -1477,6 +1486,7 @@ function handleJoinChannel(client: WebSocket, message: ClientMessage): void {
   }
 }
 
+// TODO(client-migration): Replace this handler with chat_archive because both handlers are identical.
 function handleLeaveChannel(client: WebSocket, message: ClientMessage): void {
   const { channel } = message as Extract<ClientMessage, { type: "leave_channel" }>;
   try {
@@ -1487,6 +1497,7 @@ function handleLeaveChannel(client: WebSocket, message: ClientMessage): void {
   }
 }
 
+// TODO(client-migration): Replace this handler with chat_archive because both handlers are identical.
 function handlePartChannel(client: WebSocket, message: ClientMessage): void {
   const { channel } = message as Extract<ClientMessage, { type: "part_channel" }>;
   try {
@@ -1503,6 +1514,7 @@ function handleSetLobbyTitle(client: WebSocket, message: ClientMessage): void {
   sendJson(client, { type: "ack", received: message.type });
 }
 
+// TODO(client-migration): Decide whether to re-key this handler to chatId for the new protocol.
 function handleSetLobbyScore(client: WebSocket, message: ClientMessage): void {
   const { channel, teamRedScore, teamBlueScore } = message as Extract<ClientMessage, { type: "set_lobby_score" }>;
   try {
@@ -1518,6 +1530,7 @@ function handleSetLobbyScore(client: WebSocket, message: ClientMessage): void {
   }
 }
 
+// TODO(client-migration): Decide whether to re-key this handler to chatId for the new protocol.
 function handleSetLobbySettings(client: WebSocket, message: ClientMessage): void {
   const { channel, bestOf, nextPickTeam } = message as Extract<ClientMessage, { type: "set_lobby_settings" }>;
   try {
@@ -1563,10 +1576,14 @@ function handleClientMessage(client: WebSocket, rawMessage: unknown): void {
     api_request: handleApiRequest,
     send_message: handleSendMessage,
     join_channel: handleJoinChannel,
+    // TODO(client-migration): Replace this registry entry with chat_archive because both handlers are identical.
     leave_channel: handleLeaveChannel,
+    // TODO(client-migration): Replace this registry entry with chat_archive because both handlers are identical.
     part_channel: handlePartChannel,
     refresh_lobby_title: handleSetLobbyTitle,
+    // TODO(client-migration): Decide whether to re-key this registry entry to chatId for the new protocol.
     set_lobby_score: handleSetLobbyScore,
+    // TODO(client-migration): Decide whether to re-key this registry entry to chatId for the new protocol.
     set_lobby_settings: handleSetLobbySettings,
     set_active_win_condition: handleSetActiveWinCondition,
     check_update: handleCheckUpdate,
@@ -1622,8 +1639,10 @@ function handleClientMessage(client: WebSocket, rawMessage: unknown): void {
     confirm_install: handleConfirmInstall,
     test_win_condition: handleTestWinCondition,
     lazer_make_room: lazerHandlers.handleLazerMakeRoom,
+    // TODO(client-migration): Remove this registry entry once the backend backfills chat history itself.
     lazer_load_chat: lazerHandlers.handleLazerLoadChat,
     lazer_join_room: lazerHandlers.handleLazerJoinRoom,
+    // TODO(client-migration): Remove this registry entry because the referee hub has no LeaveRoom method.
     lazer_leave_room: lazerHandlers.handleLazerLeaveRoom,
     lazer_close_room: lazerHandlers.handleLazerCloseRoom,
     lazer_invite_player: lazerHandlers.handleLazerInvitePlayer,

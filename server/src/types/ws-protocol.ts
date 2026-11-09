@@ -39,10 +39,14 @@ export type ClientCommand =
   | { type: "api_request"; endpoint: string; method?: AllowedMethods; body?: unknown }
   | { type: "send_message"; channel: string; message: string }
   | { type: "join_channel"; channel: string }
+  // TODO(client-migration): Replace these commands with chat_archive because both handlers are identical.
   | { type: "leave_channel"; channel: string }
+  // TODO(client-migration): Replace these commands with chat_archive because both handlers are identical.
   | { type: "part_channel"; channel: string }
   | { type: "refresh_lobby_title"; channel: string }
+  // TODO(client-migration): Decide whether to re-key this command to chatId for the new protocol.
   | { type: "set_lobby_score"; channel: string; teamRedScore: number; teamBlueScore: number }
+  // TODO(client-migration): Decide whether to re-key this command to chatId for the new protocol.
   | { type: "set_lobby_settings"; channel: string; bestOf: number | null; nextPickTeam: string | null }
   | { type: "set_active_win_condition"; channel: string; beatmapId: number; source: string | null }
   | { type: "check_update" }
@@ -72,8 +76,10 @@ export type ClientCommand =
       queue_mode?: QueueMode;
       max_participants?: number;
     }
+  // TODO(client-migration): Remove this command once the backend backfills chat history itself.
   | { type: "lazer_load_chat"; room_id: number }
   | { type: "lazer_join_room"; room_id: number }
+  // TODO(client-migration): Remove this dead command because the referee hub has no LeaveRoom method.
   | { type: "lazer_leave_room"; room_id: number }
   | { type: "lazer_close_room"; room_id: number }
   | { type: "lazer_invite_player"; room_id: number; user_id: number }

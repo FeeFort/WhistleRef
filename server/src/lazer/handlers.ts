@@ -43,6 +43,7 @@ export async function handleLazerMakeRoom(client: WebSocket, message: ClientMess
       { explicit: true },
     );
     await ack(client, message, room);
+    // TODO(client-migration): Remove this history load after the backend backfills chat history itself.
     await handleLazerLoadChat(client, { type: "lazer_load_chat", room_id: room.room_id, requestId: message.requestId }, false);
   } catch (error) {
     await fail(client, message, error);
@@ -54,18 +55,23 @@ export async function handleLazerJoinRoom(client: WebSocket, message: ClientMess
   try {
     const room = await roomManager.joinRoom(m.room_id, undefined, undefined, { explicit: true });
     await ack(client, message, room);
+    // TODO(client-migration): Remove this history load after the backend backfills chat history itself.
     await handleLazerLoadChat(client, { type: "lazer_load_chat", room_id: room.room_id, requestId: message.requestId }, false);
   } catch (error) {
     await fail(client, message, error);
   }
 }
 
+// TODO(client-migration): Remove this handler once the backend backfills chat history itself.
 export async function handleLazerLoadChat(client: WebSocket, message: ClientMessage, acknowledge = true): Promise<void> {
   const m = message as Extract<ClientMessage, { type: "lazer_load_chat" }>;
+  // TODO(client-migration): Remove this legacy event after the backend backfills chat history itself.
   sendJson(client, { type: "lazer_chat_state", roomId: m.room_id, requestId: m.requestId, state: "loading" } satisfies LazerChatStateEvent);
   try {
     const history = await roomManager.loadChat(m.room_id);
+    // TODO(client-migration): Remove this legacy event after the backend backfills chat history itself.
     sendJson(client, { type: "lazer_chat_history", roomId: m.room_id, requestId: m.requestId, messages: history });
+    // TODO(client-migration): Remove this legacy event after the backend backfills chat history itself.
     sendJson(client, { type: "lazer_chat_state", roomId: m.room_id, requestId: m.requestId, state: "ready" } satisfies LazerChatStateEvent);
     if (acknowledge) await ack(client, message);
   } catch (error) {
@@ -73,6 +79,7 @@ export async function handleLazerLoadChat(client: WebSocket, message: ClientMess
     const code = "code" in failure && typeof failure.code === "string" ? failure.code : undefined;
     // Old room/session notifications must not update the new session's chat state.
     if (code !== "SESSION_ENDED") {
+      // TODO(client-migration): Remove this legacy event after the backend backfills chat history itself.
       sendJson(client, {
         type: "lazer_chat_state",
         roomId: m.room_id,
@@ -87,9 +94,11 @@ export async function handleLazerLoadChat(client: WebSocket, message: ClientMess
   }
 }
 
+// TODO(client-migration): Remove this dead handler because the referee hub has no LeaveRoom method.
 export async function handleLazerLeaveRoom(client: WebSocket, message: ClientMessage): Promise<void> {
   const m = message as Extract<ClientMessage, { type: "lazer_leave_room" }>;
   try {
+    // TODO(client-migration): Remove this failing call because the referee hub has no LeaveRoom method.
     await invokeHub("LeaveRoom", m.room_id);
     roomManager.removeRoom(m.room_id, { exclude: true, reason: "reset" });
     await ack(client, message);
