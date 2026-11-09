@@ -36,6 +36,7 @@ import { fetchChatMessages } from "./chatApi.js";
 import { invokeHub, invokeHubWithRetry } from "./refereeHubClient.js";
 
 const log = logger.child("lazer", "roomManager");
+export type RoomRemovalReason = "closed" | "reset" | "archived";
 
 class RoomManager {
   private currentUserId: number | null = null;
@@ -49,17 +50,32 @@ class RoomManager {
   private pendingChatLoads = new Map<number, PendingChatLoad>();
   private resyncPromise: Promise<void> | null = null;
   private onRoomChanged: ((room: RoomState) => void) | null = null;
+  private onRoomJoined: ((room: RoomState, explicit: boolean) => void) | null = null;
   private onDeferredEvent: HubEventHandler | null = null;
   private onStatus: LazerStatusHandler | null = null;
-  private onRoomRemoved: ((roomId: number) => void) | null = null;
+  private onRoomRemoved: ((roomId: number, reason: RoomRemovalReason) => void) | null = null;
+  private archivedRoomProvider: (() => ReadonlySet<number>) | null = null;
+  private onResyncRooms: ((roomIds: number[]) => void) | null = null;
   private joinedChatChannels = new Set<number>();
   private chatWaiters = new Map<number, Array<(error?: Error) => void>>();
 
-  setListeners(onChanged: (room: RoomState) => void, onRemoved: (roomId: number) => void, onStatus?: LazerStatusHandler, onDeferredEvent?: HubEventHandler): void {
+  setListeners(
+    onChanged: (room: RoomState) => void,
+    onRemoved: (roomId: number, reason: RoomRemovalReason) => void,
+    onStatus?: LazerStatusHandler,
+    onDeferredEvent?: HubEventHandler,
+    onJoined?: (room: RoomState, explicit: boolean) => void,
+  ): void {
     this.onRoomChanged = onChanged;
     this.onRoomRemoved = onRemoved;
+    this.onRoomJoined = onJoined ?? null;
     this.onStatus = onStatus ?? null;
     this.onDeferredEvent = onDeferredEvent ?? null;
+  }
+
+  setArchivedRoomProvider(provider: () => ReadonlySet<number>, onResyncRooms?: (roomIds: number[]) => void): void {
+    this.archivedRoomProvider = provider;
+    this.onResyncRooms = onResyncRooms ?? null;
   }
 
   reset(): void {
@@ -79,7 +95,7 @@ class RoomManager {
     this.resyncPromise = null;
     for (const load of this.pendingChatLoads.values()) load.cancelled = true;
     this.pendingChatLoads.clear();
-    for (const roomId of [...this.rooms.keys()]) this.removeRoom(roomId);
+    for (const roomId of [...this.rooms.keys()]) this.removeRoom(roomId, { reason: "reset" });
     this.joinedChatChannels.clear();
     for (const waiters of this.chatWaiters.values()) {
       for (const done of waiters) done(new Error("osu! session ended."));
@@ -204,7 +220,7 @@ class RoomManager {
     }
 
     if (eventType === "UserKicked" && (payload as UserKickedEvent).kicked_user_id === this.currentUserId) {
-      this.removeRoom(roomId, true);
+      this.removeRoom(roomId, { exclude: true, reason: "closed" });
       return true;
     }
 
@@ -346,22 +362,29 @@ class RoomManager {
     return true;
   }
 
-  removeRoom(roomId: number, excludeFromResync = false): void {
-    log.debug("Removing room", { roomId, excludeFromResync });
-    if (excludeFromResync) this.excludedRooms.add(roomId);
+  removeRoom(roomId: number, options: { exclude?: boolean; reason: RoomRemovalReason }): void {
+    log.debug("Removing room", { roomId, ...options });
+    if (options.exclude) this.excludedRooms.add(roomId);
     const chatLoad = this.pendingChatLoads.get(roomId);
     if (chatLoad) chatLoad.cancelled = true;
     this.pendingChatLoads.delete(roomId);
     const pending = this.pendingJoins.get(roomId);
     if (pending) pending.cancelled = true;
     if (this.rooms.delete(roomId)) {
-      this.onRoomRemoved?.(roomId);
+      this.onRoomRemoved?.(roomId, options.reason);
     }
   }
 
-  async joinRoom(roomId: number | null, request?: MakeRoomRequest, onRetry?: (attempt: number, maxAttempts: number, retryIn: number) => void): Promise<RoomState> {
+  async joinRoom(
+    roomId: number | null,
+    request?: MakeRoomRequest,
+    onRetry?: (attempt: number, maxAttempts: number, retryIn: number) => void,
+    options: { explicit?: boolean } = {},
+  ): Promise<RoomState> {
+    const explicit = options.explicit ?? false;
     log.debug(roomId === null ? "Creating room" : "Joining room", { roomId });
     const generation = this.generation;
+    if (explicit && roomId !== null) this.excludedRooms.delete(roomId);
     const existing = roomId === null ? undefined : this.pendingJoins.get(roomId);
     if (existing) {
       log.trace("Sharing pending room join", { roomId, generation });
@@ -387,6 +410,7 @@ class RoomManager {
               ? await invokeHubWithRetry<RoomJoinedResponse>("JoinRoom", onRetry, roomId)
               : await invokeHub<RoomJoinedResponse>("JoinRoom", roomId);
         roomId = response.room_id;
+        if (explicit) this.excludedRooms.delete(roomId);
         if (this.excludedRooms.has(roomId)) pending.cancelled = true;
         if (!pending.cancelled) this.rooms.set(roomId, response);
       } finally {
@@ -420,6 +444,7 @@ class RoomManager {
     if (pending.cancelled || generation !== this.generation) throw new Error("osu! session ended.");
     const room = roomId === null ? undefined : this.rooms.get(roomId);
     if (!room) throw new Error(`Room ${roomId} was not joined.`);
+    this.onRoomJoined?.(room, explicit);
     return room;
   }
 
@@ -446,12 +471,14 @@ class RoomManager {
           log.trace("Stale room operation ignored", { generation, currentGeneration: this.generation });
           throw new Error("osu! session ended.");
         }
-        const liveRoomIds = new Set(response.room_ids.filter((roomId) => !this.excludedRooms.has(roomId)));
+        this.onResyncRooms?.(response.room_ids);
+        const archived = this.archivedRoomProvider?.() ?? new Set<number>();
+        const liveRoomIds = new Set(response.room_ids.filter((roomId) => !this.excludedRooms.has(roomId) && !archived.has(roomId)));
         listed = true;
         log.debug("Room list received", () => ({ returned: response.room_ids, restoring: [...liveRoomIds] }));
 
         for (const roomId of this.rooms.keys()) {
-          if (!liveRoomIds.has(roomId)) this.removeRoom(roomId);
+          if (!liveRoomIds.has(roomId)) this.removeRoom(roomId, { reason: "closed" });
         }
 
         const errors: Error[] = [];

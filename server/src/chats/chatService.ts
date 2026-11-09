@@ -2,7 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { closeDatabase } from "../db/database.js";
 import { deleteArchivedOlderThan, deleteChats as deleteArchivedChats, getChat, listChats as readChats } from "../db/chatsRepo.js";
 import { getAllSettings, getSetting as readSetting, setSetting as writeSetting } from "../db/settingsRepo.js";
-import { getMessagesPage } from "../db/messagesRepo.js";
+import { getMessagesPage, getHighestExternalId as readHighestExternalId } from "../db/messagesRepo.js";
 import type { Chat, ChatSettings, ChatStatus, ChatWire, Message, MessageWire, OpenOrCreateChatInput, RecordMessageInput, ChatDeleteResult } from "../types/index.js";
 import { ChatLifecycle } from "./chatLifecycle.js";
 import { MessageRecorder } from "./messageRecorder.js";
@@ -85,6 +85,9 @@ export class ChatService {
   getChatHistory(chatId: number): MessageWire[] {
     if (!getChat(this.database, chatId)) throw new Error(`Chat ${chatId} not found`);
     return getMessagesPage(this.database, chatId, Number.MAX_SAFE_INTEGER).map(toMessageWire);
+  }
+  getHighestExternalId(chatId: number): number | null {
+    return readHighestExternalId(this.database, chatId);
   }
   deleteChats(ids: readonly number[]): ChatDeleteResult {
     const deleted = deleteArchivedChats(this.database, ids);

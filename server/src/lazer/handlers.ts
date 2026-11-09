@@ -4,6 +4,7 @@ import { invokeHub } from "./refereeHubClient.js";
 import { roomManager } from "./roomManager.js";
 import { sendChatMessage } from "./chatApi.js";
 import type { ClientMessage, ListRoomsResponse, LazerChatStateEvent } from "../types/index.js";
+import { getLazerChatBridge, LAZER_CHAT_TEXT } from "../chats/lazerChatBridge.js";
 
 async function ack(client: WebSocket, message: ClientMessage, result?: unknown): Promise<void> {
   sendJson(client, { type: "ack", received: message.type, ...(message.requestId !== undefined ? { requestId: message.requestId } : {}), ...(result !== undefined ? { result } : {}) });
@@ -28,14 +29,19 @@ async function fail(client: WebSocket, message: ClientMessage, error: unknown): 
 export async function handleLazerMakeRoom(client: WebSocket, message: ClientMessage): Promise<void> {
   const m = message as Extract<ClientMessage, { type: "lazer_make_room" }>;
   try {
-    const room = await roomManager.joinRoom(null, {
-      ruleset_id: m.ruleset_id,
-      beatmap_id: m.beatmap_id,
-      name: m.name,
-      type: m.match_type,
-      queue_mode: m.queue_mode,
-      max_participants: m.max_participants,
-    });
+    const room = await roomManager.joinRoom(
+      null,
+      {
+        ruleset_id: m.ruleset_id,
+        beatmap_id: m.beatmap_id,
+        name: m.name,
+        type: m.match_type,
+        queue_mode: m.queue_mode,
+        max_participants: m.max_participants,
+      },
+      undefined,
+      { explicit: true },
+    );
     await ack(client, message, room);
     await handleLazerLoadChat(client, { type: "lazer_load_chat", room_id: room.room_id, requestId: message.requestId }, false);
   } catch (error) {
@@ -46,7 +52,7 @@ export async function handleLazerMakeRoom(client: WebSocket, message: ClientMess
 export async function handleLazerJoinRoom(client: WebSocket, message: ClientMessage): Promise<void> {
   const m = message as Extract<ClientMessage, { type: "lazer_join_room" }>;
   try {
-    const room = await roomManager.joinRoom(m.room_id);
+    const room = await roomManager.joinRoom(m.room_id, undefined, undefined, { explicit: true });
     await ack(client, message, room);
     await handleLazerLoadChat(client, { type: "lazer_load_chat", room_id: room.room_id, requestId: message.requestId }, false);
   } catch (error) {
@@ -85,7 +91,7 @@ export async function handleLazerLeaveRoom(client: WebSocket, message: ClientMes
   const m = message as Extract<ClientMessage, { type: "lazer_leave_room" }>;
   try {
     await invokeHub("LeaveRoom", m.room_id);
-    roomManager.removeRoom(m.room_id, true);
+    roomManager.removeRoom(m.room_id, { exclude: true, reason: "reset" });
     await ack(client, message);
   } catch (error) {
     await fail(client, message, error);
@@ -97,7 +103,7 @@ export async function handleLazerCloseRoom(client: WebSocket, message: ClientMes
   try {
     await invokeHub("CloseRoom", m.room_id);
     // Hub doesn't send success message back, so removing the room ourselves
-    roomManager.removeRoom(m.room_id, true);
+    roomManager.removeRoom(m.room_id, { exclude: true, reason: "closed" });
     await ack(client, message);
   } catch (error) {
     await fail(client, message, error);
@@ -109,6 +115,7 @@ export async function handleLazerInvitePlayer(client: WebSocket, message: Client
   try {
     await invokeHub("InvitePlayer", m.room_id, m.user_id);
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, LAZER_CHAT_TEXT.invited, m.user_id);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -119,6 +126,7 @@ export async function handleLazerKickPlayer(client: WebSocket, message: ClientMe
   try {
     await invokeHub("KickPlayer", m.room_id, m.user_id);
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, LAZER_CHAT_TEXT.kicked, m.user_id);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -129,6 +137,7 @@ export async function handleLazerBanUser(client: WebSocket, message: ClientMessa
   try {
     await invokeHub("BanUser", m.room_id, m.user_id);
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, LAZER_CHAT_TEXT.banned, m.user_id);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -139,6 +148,7 @@ export async function handleLazerAddReferee(client: WebSocket, message: ClientMe
   try {
     await invokeHub("AddReferee", m.room_id, m.user_id);
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, LAZER_CHAT_TEXT.refereeAdded, m.user_id);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -149,6 +159,7 @@ export async function handleLazerRemoveReferee(client: WebSocket, message: Clien
   try {
     await invokeHub("RemoveReferee", m.room_id, m.user_id);
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, LAZER_CHAT_TEXT.refereeRemoved, m.user_id);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -165,6 +176,7 @@ export async function handleLazerChangeRoomSettings(client: WebSocket, message: 
       max_participants: m.max_participants,
     });
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, () => LAZER_CHAT_TEXT.settingsChanged);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -181,6 +193,7 @@ export async function handleLazerEditCurrentPlaylistItem(client: WebSocket, mess
       freestyle: m.freestyle,
     });
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, () => LAZER_CHAT_TEXT.currentPlaylistEdited);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -197,6 +210,7 @@ export async function handleLazerAddPlaylistItem(client: WebSocket, message: Cli
       freestyle: m.freestyle,
     });
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, () => LAZER_CHAT_TEXT.playlistAdded);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -214,6 +228,7 @@ export async function handleLazerEditPlaylistItem(client: WebSocket, message: Cl
       freestyle: m.freestyle,
     });
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, () => LAZER_CHAT_TEXT.playlistEdited);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -224,6 +239,7 @@ export async function handleLazerRemovePlaylistItem(client: WebSocket, message: 
   try {
     await invokeHub("RemovePlaylistItem", m.room_id, { playlist_item_id: m.playlist_item_id });
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, () => LAZER_CHAT_TEXT.playlistRemoved);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -244,6 +260,7 @@ export async function handleLazerMoveUser(client: WebSocket, message: ClientMess
   try {
     await invokeHub("MoveUser", m.room_id, { user_id: m.user_id, slot: m.slot, team: m.team });
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, (name) => LAZER_CHAT_TEXT.moved(name, m.slot), m.user_id);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -254,6 +271,7 @@ export async function handleLazerSetLockState(client: WebSocket, message: Client
   try {
     await invokeHub("SetLockState", m.room_id, { locked: m.locked });
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, () => LAZER_CHAT_TEXT.locked(m.locked));
   } catch (error) {
     await fail(client, message, error);
   }
@@ -264,6 +282,7 @@ export async function handleLazerStartMatch(client: WebSocket, message: ClientMe
   try {
     await invokeHub("StartMatch", m.room_id, { countdown: m.countdown });
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, () => LAZER_CHAT_TEXT.matchStarted(m.countdown));
   } catch (error) {
     await fail(client, message, error);
   }
@@ -274,6 +293,7 @@ export async function handleLazerStopMatchCountdown(client: WebSocket, message: 
   try {
     await invokeHub("StopMatchCountdown", m.room_id);
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, () => LAZER_CHAT_TEXT.countdownStopped);
   } catch (error) {
     await fail(client, message, error);
   }
@@ -284,6 +304,7 @@ export async function handleLazerAbortMatch(client: WebSocket, message: ClientMe
   try {
     await invokeHub("AbortMatch", m.room_id);
     await ack(client, message);
+    void getLazerChatBridge()?.recordAction(m.room_id, () => LAZER_CHAT_TEXT.matchAborted);
   } catch (error) {
     await fail(client, message, error);
   }

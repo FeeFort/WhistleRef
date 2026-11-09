@@ -26,6 +26,9 @@ import { ChatSocket } from "./lazer/chatSocket.js";
 import { openDatabase } from "./db/database.js";
 import { ChatService } from "./chats/chatService.js";
 import { StableChatBridge } from "./chats/stableChatBridge.js";
+import { LazerChatBridge, setLazerChatBridge } from "./chats/lazerChatBridge.js";
+import { UserNameResolver } from "./chats/userNameResolver.js";
+import { fetchChatMessagesSince } from "./lazer/chatApi.js";
 
 const launchedAfterUpdate = process.argv.includes("--updated");
 const sessionLog = logger.child("lazer", "session");
@@ -40,6 +43,7 @@ const chatServiceLog = logger.child("core", "chatService");
 let chatSocket: ChatSocket | null = null;
 let chatService!: ChatService;
 let stableChatBridge!: StableChatBridge;
+let lazerChatBridge!: LazerChatBridge;
 let deferredChatEvents: unknown[] | null = null;
 
 function emitChatEvent(event: unknown): void {
@@ -71,7 +75,11 @@ function startChatSocket(): void {
         for (const message of messages) {
           const channelId = Number((message as Record<string, unknown>)?.channel_id);
           const room = Number.isInteger(channelId) ? roomManager.getRoomByChatChannel(channelId) : undefined;
-          if (room) broadcast({ type: "lazer_chat_message", roomId: room.room_id, message, users: data?.users ?? [] });
+          if (room) {
+            // TODO: Remove this temporary broadcast after the client migration to chat_message.
+            broadcast({ type: "lazer_chat_message", roomId: room.room_id, message, users: data?.users ?? [] });
+            lazerChatBridge?.onLiveMessage(room.room_id, message as Record<string, unknown>, Array.isArray(data?.users) ? data.users : []);
+          }
         }
       }
     },
@@ -286,8 +294,14 @@ async function startLazerSession(): Promise<void> {
   sessionLog.separator("Starting session");
   roomManager.setCurrentUserId(auth.user.id);
   roomManager.setListeners(
-    (room) => broadcast({ type: "lazer_room_state", room }),
-    (roomId) => broadcast({ type: "lazer_room_closed", roomId }),
+    (room) => {
+      broadcast({ type: "lazer_room_state", room });
+      lazerChatBridge?.onRoomChanged(room);
+    },
+    (roomId, reason) => {
+      if (reason === "closed" || reason === "reset") broadcast({ type: "lazer_room_closed", roomId });
+      lazerChatBridge?.onRoomRemoved(roomId, reason);
+    },
     (event) => {
       if (event.type === "lazer_sync_state") {
         lazerSyncState = event;
@@ -296,11 +310,18 @@ async function startLazerSession(): Promise<void> {
       broadcast(event);
     },
     (event) => broadcast(event),
+    (room, explicit) => lazerChatBridge?.onRoomJoined(room, { explicit }),
+  );
+  roomManager.setArchivedRoomProvider(
+    () => lazerChatBridge?.archivedRoomIds() ?? new Set(),
+    (roomIds) => lazerChatBridge?.reconcile(roomIds),
   );
 
   await connectToRefereeHub(
     (event) => {
       if (roomManager.handleHubEvent(event.eventType, event.payload)) broadcast(event);
+      if (event.eventType === "RollCompleted")
+        void lazerChatBridge?.onRoll(event.payload as import("./types/index.js").RollCompletedEvent).catch((error) => sessionLog.warn("Lazer roll could not be recorded", { error }));
     },
     () => roomManager.resync(),
     (event) => {
@@ -1691,6 +1712,17 @@ try {
     irc: banchoConnection,
     logger: ircLog,
   });
+  const userNames = new UserNameResolver();
+  lazerChatBridge = new LazerChatBridge({
+    chatService,
+    roomManager,
+    fetchHistory: fetchChatMessagesSince,
+    resolveName: (id) => userNames.resolve(id),
+    rememberName: (id, username) => userNames.remember(id, username),
+    logger: sessionLog,
+  });
+  setLazerChatBridge(lazerChatBridge);
+  chatService.registerPlatformAdapter("lazer", { detach: (chat) => lazerChatBridge.detach(chat) });
   chatService.registerPlatformAdapter("stable", { detach: (chat) => stableChatBridge.detach(chat) });
   chatService.startup();
 } catch (error) {
