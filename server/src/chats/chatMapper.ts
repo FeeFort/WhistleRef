@@ -1,6 +1,6 @@
 import type { Chat, ChatWire, Message, MessageWire } from "../types/index.js";
 
-export function toChatWire(chat: Chat): ChatWire {
+export function toChatWire(chat: Chat, messageCount: number): ChatWire {
   return {
     id: chat.id,
     platform: chat.platform,
@@ -10,6 +10,7 @@ export function toChatWire(chat: Chat): ChatWire {
     createdAt: chat.created_at,
     closedAt: chat.closed_at,
     archivedAt: chat.archived_at,
+    messageCount,
   };
 }
 

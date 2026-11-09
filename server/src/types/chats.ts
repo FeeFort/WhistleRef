@@ -9,6 +9,7 @@ export interface ChatWire {
   createdAt: string;
   closedAt: string | null;
   archivedAt: string | null;
+  messageCount: number;
 }
 export interface MessageWire {
   id: number;

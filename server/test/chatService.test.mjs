@@ -51,10 +51,45 @@ test("chat service emits only changed rows and deduplicates messages", () => {
     events.map(([kind]) => kind),
     ["chat", "chat", "message"],
   );
+  assert.equal(events[0][1].messageCount, 0);
+  assert.equal(events[1][1].messageCount, 0);
   assert.deepEqual(
     service.getChatHistory(chat.id).map((m) => m.id),
     [1],
   );
+  service.shutdown();
+});
+
+test("chats_list returns grouped message counts with status filtering and id ordering", () => {
+  const db = openDatabase(":memory:");
+  const service = new ChatService(db);
+  const first = makeChat(db, 10, "archived");
+  const second = makeChat(db, 11, "active");
+  const third = makeChat(db, 12, "archived");
+  for (const kind of ["message", "system", "roll", "service", "event"]) {
+    db.prepare("INSERT INTO messages (chat_id, text, created_at, kind) VALUES (?, ?, ?, ?)").run(second.id, kind, stamp, kind);
+  }
+  db.prepare("INSERT INTO messages (chat_id, text, created_at, kind) VALUES (?, 'line', ?, 'action')").run(third.id, stamp);
+  assert.deepEqual(
+    service.listChats(["archived"]).map(({ id, messageCount }) => [id, messageCount]),
+    [
+      [first.id, 0],
+      [third.id, 1],
+    ],
+  );
+  assert.deepEqual(service.listChats(["active"]).map(({ id, messageCount }) => [id, messageCount]), [[second.id, 5]]);
+  assert.deepEqual(service.listChats().map(({ id }) => id), [first.id, second.id, third.id]);
+  service.shutdown();
+});
+
+test("chat_updated reports the message count at each lifecycle event", () => {
+  const db = openDatabase(":memory:");
+  const updates = [];
+  const service = new ChatService(db, { onChatUpdated: (chat) => updates.push(chat) });
+  const chat = service.openOrCreateChat({ platform: "stable", externalId: 30, title: "Room" }).chat;
+  service.recordMessage(chat.id, { author: "A", text: "one", kind: "message" });
+  service.archiveChat(chat.id);
+  assert.deepEqual(updates.map(({ messageCount }) => messageCount), [0, 1]);
   service.shutdown();
 });
 
@@ -104,7 +139,7 @@ test("startup leaves archived rows alone when auto-delete is disabled and shutdo
 });
 
 test("wire mappers expose exact camelCase fields", () => {
-  assert.deepEqual(toChatWire({ id: 1, platform: "stable", external_id: 2, title: "T", status: "active", created_at: stamp, closed_at: null, archived_at: null, lobby_state: null }), {
+  assert.deepEqual(toChatWire({ id: 1, platform: "stable", external_id: 2, title: "T", status: "active", created_at: stamp, closed_at: null, archived_at: null, lobby_state: null }, 7), {
     id: 1,
     platform: "stable",
     externalId: 2,
@@ -113,6 +148,7 @@ test("wire mappers expose exact camelCase fields", () => {
     createdAt: stamp,
     closedAt: null,
     archivedAt: null,
+    messageCount: 7,
   });
   assert.deepEqual(toMessageWire({ id: 3, chat_id: 1, external_id: null, author: null, sender_id: null, text: "T", created_at: stamp, kind: "system" }), {
     id: 3,

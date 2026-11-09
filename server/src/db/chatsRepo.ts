@@ -25,6 +25,22 @@ export function listChats(database: DatabaseSync, status?: ChatStatus): Chat[] {
   return (status ? database.prepare("SELECT * FROM chats WHERE status = ? ORDER BY id").all(status) : database.prepare("SELECT * FROM chats ORDER BY id").all()) as unknown as Chat[];
 }
 
+export function listChatsWithMessageCounts(database: DatabaseSync, statuses?: readonly ChatStatus[]): Array<{ chat: Chat; messageCount: number }> {
+  if (statuses?.length === 0) return [];
+  const statusFilter = statuses ? ` WHERE chats.status IN (${statuses.map(() => "?").join(", ")})` : "";
+  const rows = database
+    .prepare(
+      `SELECT chats.*, COUNT(messages.id) AS message_count
+       FROM chats
+       LEFT JOIN messages ON messages.chat_id = chats.id
+       ${statusFilter}
+       GROUP BY chats.id
+       ORDER BY chats.id`,
+    )
+    .all(...(statuses ?? [])) as unknown as Array<Chat & { message_count: number }>;
+  return rows.map(({ message_count, ...chat }) => ({ chat, messageCount: Number(message_count) }));
+}
+
 export function setChatStatus(database: DatabaseSync, id: number, status: ChatStatus, timestamp: string): void {
   database
     .prepare(

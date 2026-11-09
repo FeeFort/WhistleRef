@@ -1,8 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import { closeDatabase } from "../db/database.js";
-import { deleteArchivedOlderThan, deleteChats as deleteArchivedChats, findChat, getChat, listChats as readChats, readLobbyState, writeLobbyState } from "../db/chatsRepo.js";
+import { deleteArchivedOlderThan, deleteChats as deleteArchivedChats, findChat, getChat, listChats as readChats, listChatsWithMessageCounts, readLobbyState, writeLobbyState } from "../db/chatsRepo.js";
 import { getAllSettings, getSetting as readSetting, setSetting as writeSetting } from "../db/settingsRepo.js";
-import { getMessagesPage, getHighestExternalId as readHighestExternalId } from "../db/messagesRepo.js";
+import { countMessages, getMessagesPage, getHighestExternalId as readHighestExternalId } from "../db/messagesRepo.js";
 import type { Chat, ChatSettings, ChatStatus, ChatWire, Message, MessageWire, OpenOrCreateChatInput, RecordMessageInput, ChatDeleteResult } from "../types/index.js";
 import { ChatLifecycle } from "./chatLifecycle.js";
 import { MessageRecorder } from "./messageRecorder.js";
@@ -41,7 +41,7 @@ export class ChatService {
   }
   openOrCreateChat(input: OpenOrCreateChatInput) {
     const result = this.lifecycle.openOrCreateChat(input);
-    if (result.changed) this.callbacks.onChatUpdated?.(toChatWire(result.chat));
+    if (result.changed) this.callbacks.onChatUpdated?.(this.toChatWire(result.chat));
     return result;
   }
   markRoomClosed(chatId: number) {
@@ -58,7 +58,7 @@ export class ChatService {
   }
   archiveChat(chatId: number) {
     const result = this.updateLifecycle(() => this.lifecycle.archiveChat(chatId));
-    if (result.changed) this.adapters.get(result.chat.platform)?.detach(toChatWire(result.chat));
+    if (result.changed) this.adapters.get(result.chat.platform)?.detach(this.toChatWire(result.chat));
     return result;
   }
   recordMessage(chatId: number, input: RecordMessageInput) {
@@ -81,8 +81,7 @@ export class ChatService {
     return inserted;
   }
   listChats(statuses?: readonly ChatStatus[]): ChatWire[] {
-    const rows: Chat[] = readChats(this.database);
-    return rows.filter((chat) => !statuses || statuses.includes(chat.status)).map(toChatWire);
+    return listChatsWithMessageCounts(this.database, statuses).map(({ chat, messageCount }) => toChatWire(chat, messageCount));
   }
   getChatHistory(chatId: number): MessageWire[] {
     if (!getChat(this.database, chatId)) throw new Error(`Chat ${chatId} not found`);
@@ -174,14 +173,14 @@ export class ChatService {
     const recovered = this.lifecycle.startupRecovery();
     for (const closed of closedBeforeRecovery) {
       const chat = getChat(this.database, closed.id);
-      if (chat) this.callbacks.onChatUpdated?.(toChatWire(chat));
+      if (chat) this.callbacks.onChatUpdated?.(this.toChatWire(chat));
     }
     const days = readSetting<number | null>(this.database, "archive.autoDeleteDays");
     if (days !== undefined && days !== null) {
       const cutoff = new Date(new Date(this.now()).getTime() - days * 86400000).toISOString();
       for (const id of deleteArchivedOlderThan(this.database, cutoff)) this.callbacks.onChatDeleted?.(id);
     }
-    return recovered.activeChats.map(toChatWire);
+    return recovered.activeChats.map((chat) => this.toChatWire(chat));
   }
   shutdown(): void {
     if (this.closed) return;
@@ -200,8 +199,11 @@ export class ChatService {
 
   private updateLifecycle<T extends { chat: Chat; changed: boolean }>(invoke: () => T): T {
     const result = invoke();
-    if (result.changed) this.callbacks.onChatUpdated?.(toChatWire(result.chat));
+    if (result.changed) this.callbacks.onChatUpdated?.(this.toChatWire(result.chat));
     return result;
+  }
+  private toChatWire(chat: Chat): ChatWire {
+    return toChatWire(chat, countMessages(this.database, chat.id));
   }
   private validateSetting(key: string, value: unknown): void {
     if (key !== "archive.autoDeleteDays") throw new Error(`Unknown setting: ${key}`);
