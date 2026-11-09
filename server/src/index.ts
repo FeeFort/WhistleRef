@@ -29,6 +29,7 @@ import { StableChatBridge } from "./chats/stableChatBridge.js";
 import { LazerChatBridge, setLazerChatBridge } from "./chats/lazerChatBridge.js";
 import { UserNameResolver } from "./chats/userNameResolver.js";
 import { fetchChatMessagesSince } from "./lazer/chatApi.js";
+import { createLobbyHandlers, validateLobbyCommand, validateMatchScores } from "./chats/lobbyHandlers.js";
 
 const launchedAfterUpdate = process.argv.includes("--updated");
 const sessionLog = logger.child("lazer", "session");
@@ -479,7 +480,18 @@ class BanchoConnection {
     }
 
     ircLog.trace(changed ? "Lobby state update applied" : "Lobby state update unchanged", () => ({ channel, fields: Object.keys(update) }));
-    if (changed) this.sendLobbyState(channel, state);
+    if (changed) {
+      stableChatBridge?.onMatchStateChanged(channel, {
+        teamRed: state.teamRed,
+        teamBlue: state.teamBlue,
+        teamRedScore: state.teamRedScore,
+        teamBlueScore: state.teamBlueScore,
+        bestOf: state.bestOf,
+        nextPickTeam: state.nextPickTeam,
+        lastPlay: state.lastPlay,
+      });
+      this.sendLobbyState(channel, state);
+    }
   }
 
   closeLobby(channel: string): void {
@@ -937,6 +949,8 @@ class BanchoConnection {
         if (message.command === "JOIN") {
           this.getLobbyState(channel, true);
           stableChatBridge?.onOwnJoin(channel);
+          const restored = stableChatBridge?.restoreMatchState(channel);
+          if (restored) this.updateLobbyState(channel, restored);
         } else {
           this.closeLobby(channel);
           stableChatBridge?.onOwnPart(channel);
@@ -1155,6 +1169,13 @@ function validateMessage(message: unknown): string | null {
       }
       return null;
     },
+    chat_lobby_state_get: () => validateLobbyCommand(String(message.type), message),
+    lobby_match_set: () => validateLobbyCommand(String(message.type), message),
+    lobby_map_state_set: () => validateLobbyCommand(String(message.type), message),
+    lobby_map_state_clear: () => validateLobbyCommand(String(message.type), message),
+    lobby_active_pool_set: () => validateLobbyCommand(String(message.type), message),
+    lobby_qualification_mode_set: () => validateLobbyCommand(String(message.type), message),
+    lobby_state_import: () => validateLobbyCommand(String(message.type), message),
     set_active_win_condition: () => {
       if (!isNonEmptyString(message.channel)) return "channel must be a non-empty string.";
       if (!Number.isSafeInteger(message.beatmapId) || (message.beatmapId as number) <= 0) return "beatmapId must be a positive integer.";
@@ -1486,10 +1507,7 @@ function handleSetLobbyScore(client: WebSocket, message: ClientMessage): void {
   const { channel, teamRedScore, teamBlueScore } = message as Extract<ClientMessage, { type: "set_lobby_score" }>;
   try {
     const state = banchoConnection.getLobbyState(channel.trim());
-    const winningScore = getWinningScore(state.bestOf);
-    if (winningScore && (teamRedScore > winningScore || teamBlueScore > winningScore)) {
-      throw new Error(`Match scores cannot exceed ${winningScore}.`);
-    }
+    validateMatchScores(state.bestOf, { teamRedScore, teamBlueScore });
     banchoConnection.updateLobbyState(channel.trim(), {
       teamRedScore,
       teamBlueScore,
@@ -1600,6 +1618,7 @@ function handleClientMessage(client: WebSocket, rawMessage: unknown): void {
         sendJson(client, { type: "error", message: (error as Error).message });
       }
     },
+    ...createLobbyHandlers(chatService, banchoConnection),
     confirm_install: handleConfirmInstall,
     test_win_condition: handleTestWinCondition,
     lazer_make_room: lazerHandlers.handleLazerMakeRoom,
@@ -1706,6 +1725,7 @@ try {
     onChatDeleted: (chatId) => emitChatEvent({ type: "chat_deleted", chatId }),
     onMessage: (message) => emitChatEvent({ type: "chat_message", message }),
     onSettingsUpdated: (settings) => emitChatEvent({ type: "settings_updated", settings }),
+    onLobbyStateUpdated: (chatId, lobbyState) => emitChatEvent({ type: "chat_lobby_state_updated", chatId, lobbyState }),
   });
   stableChatBridge = new StableChatBridge({
     chatService,

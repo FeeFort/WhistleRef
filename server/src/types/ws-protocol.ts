@@ -1,6 +1,7 @@
 import type { AllowedMethods } from "./osu-api.js";
 import type { ChatStatus } from "./db.js";
 import type { ChatSettings, ChatWire, MessageWire } from "./chats.js";
+import type { LobbyMatch, LobbyStateDocument } from "../chats/lobbyState.js";
 import type {
   AddPlaylistItemRequest,
   ChangeRoomSettingsRequest,
@@ -22,10 +23,13 @@ export type ChatServerMessage =
   | { type: "chats_list_response"; chats: ChatWire[]; requestId?: string }
   | { type: "chat_history_response"; chatId: number; messages: MessageWire[]; requestId?: string }
   | { type: "settings_response"; settings: ChatSettings; requestId?: string }
+  | { type: "chat_lobby_state_response"; chatId: number; lobbyState: LobbyStateDocument; requestId?: string }
   | { type: "chat_updated"; chat: ChatWire }
   | { type: "chat_deleted"; chatId: number }
   | { type: "chat_message"; message: MessageWire }
+  | { type: "chat_lobby_state_updated"; chatId: number; lobbyState: LobbyStateDocument }
   | { type: "settings_updated"; settings: ChatSettings };
+  
 
 export type ClientCommand =
   | { type: "login"; login: string; password: string }
@@ -50,6 +54,13 @@ export type ClientCommand =
   | { type: "chat_delete"; chatIds: number[] }
   | { type: "settings_get" }
   | { type: "settings_set"; key: string; value: unknown }
+  | { type: "chat_lobby_state_get"; chatId: number }
+  | { type: "lobby_match_set"; chatId: number; patch: LobbyMatch }
+  | { type: "lobby_map_state_set"; chatId: number; slot: string; patch: Record<string, unknown> }
+  | { type: "lobby_map_state_clear"; chatId: number }
+  | { type: "lobby_active_pool_set"; chatId: number; poolId: string | null }
+  | { type: "lobby_qualification_mode_set"; chatId: number; enabled: boolean }
+  | { type: "lobby_state_import"; lobbies: unknown[] }
   | { type: "confirm_install" }
   | { type: "test_win_condition"; slotId: string; source: string; sampleContext: Record<string, unknown> }
   | {

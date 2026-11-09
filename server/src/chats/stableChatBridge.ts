@@ -1,4 +1,4 @@
-import type { ConnectionState, ChatWire } from "../types/index.js";
+import type { ConnectionState, ChatWire, LobbyState } from "../types/index.js";
 import type { ChatService } from "./chatService.js";
 
 export const STABLE_CHAT_SERVICE_TEXT = {
@@ -60,6 +60,29 @@ export class StableChatBridge {
     this.setTimer = options.setTimeout ?? setTimeout;
     this.clearTimer = options.clearTimeout ?? clearTimeout;
     this.now = options.clock ?? (() => new Date().toISOString());
+  }
+
+  onMatchStateChanged(channel: string, matchFields: Pick<LobbyState, "teamRed" | "teamBlue" | "teamRedScore" | "teamBlueScore" | "bestOf" | "nextPickTeam" | "lastPlay">): void {
+    const externalId = parseMultiplayerChannel(channel);
+    const chat = this.findChat(externalId);
+    if (!chat || chat.status === "archived") return;
+    this.options.chatService.replaceMatch(chat.id, {
+      teamRed: matchFields.teamRed,
+      teamBlue: matchFields.teamBlue,
+      teamRedScore: matchFields.teamRedScore,
+      teamBlueScore: matchFields.teamBlueScore,
+      bestOf: matchFields.bestOf,
+      nextPickTeam: matchFields.nextPickTeam,
+      lastPlay: matchFields.lastPlay,
+    });
+  }
+
+  restoreMatchState(channel: string): Partial<LobbyState> | null {
+    const chat = this.findChat(parseMultiplayerChannel(channel));
+    if (!chat) return null;
+    const match = this.options.chatService.getLobbyState(chat.id).match;
+    if (Object.keys(match).length === 0) return null;
+    return { ...match, lastPlay: match.lastPlay as LobbyState["lastPlay"] };
   }
 
   onOwnJoin(channel: string, titleHint?: string): void {
