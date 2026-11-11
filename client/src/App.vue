@@ -4,6 +4,7 @@ import Button from "primevue/button";
 import ColorPicker from "primevue/colorpicker";
 import InputText from "primevue/inputtext";
 import Popover from "primevue/popover";
+import Select from "primevue/select";
 import SelectButton from "primevue/selectbutton";
 import Toast from "primevue/toast";
 import ToggleSwitch from "primevue/toggleswitch";
@@ -52,7 +53,7 @@ import { useServerConnection } from "./composables/useServerConnection";
 import { formatBeatmapOwners } from "./composables/useBeatmapAuthors";
 import { clearLazerRoomResourceCache, getLazerCachedProfile, loadLazerCachedBeatmap, loadLazerCachedProfile, loadLazerCachedProfileByUsername } from "./composables/useLazerRoomResourceCache";
 import { formatLobbyTemplate, useLobbyMessages } from "./composables/useLobbyMessages";
-import { sortMappoolSlots, useMappool } from "./composables/useMappool";
+import { applyServerLobbyState, configureLobbyStateSync, sortMappoolSlots, useMappool } from "./composables/useMappool";
 import { advanceMappoolChatContext, createMappoolChatContext } from "./composables/useMappoolChat";
 import { useNowPlayingSettings } from "./composables/useNowPlayingSettings";
 import { NOTIFICATION_SOUNDS, NOTIFICATION_TRIGGER_OPTIONS, getNotificationSoundUrl, useNotifications } from "./composables/useNotifications";
@@ -73,6 +74,13 @@ const osuProfile = ref(null);
 const sidebarOpen = ref(true);
 const settingsOpen = ref(false);
 const archiveOpen = ref(false);
+const archiveLoading = ref(false);
+const archiveActionBusy = reactive({});
+const restoredArchivedChats = reactive({});
+const ARCHIVE_TIMESTAMP_KEY = "whistleref-archive-timestamp-format";
+const archiveAutoDeleteDays = ref(null);
+const archiveTimestampFormat = ref(localStorage.getItem(ARCHIVE_TIMESTAMP_KEY) || "relative");
+const archiveSettingsLoaded = ref(false);
 const updateDialogVisible = ref(false);
 const updateDialogMode = ref("available");
 const updateInfo = ref({ currentVersion: "", latestVersion: "", releaseNotesUrl: "" });
@@ -112,6 +120,13 @@ const lazerCompletedBeatmaps = reactive({});
 const lazerConnectionState = ref("disconnected");
 const lazerSyncState = ref("idle");
 const channelMessages = reactive({});
+const serverChatsById = reactive({});
+const requestedChatHistories = new Set();
+const requestedLobbyStates = new Set();
+const pendingLobbyServerStates = new Map();
+const pendingLobbyOperations = new Map();
+const pendingServerMessages = [];
+let serverChatListRequested = false;
 const pendingLazerMessages = [];
 const lazerCountdownTimeouts = new Map();
 const lobbyContexts = reactive({});
@@ -123,7 +138,6 @@ const pendingJoinChannel = ref(null);
 const lazerPlayersDialogOpen = ref(false);
 const lazerRefereesDialogOpen = ref(false);
 const refereesDialogOpen = ref(false);
-const lazerChatRoomsBeingLoaded = new Set();
 const pendingLazerInviteJoins = new Set();
 let pendingJoinTimeout;
 const { primaryColor, setPrimaryColor } = useDarkMode();
@@ -154,8 +168,6 @@ const {
   sendMessage: sendServerMessage,
   joinChannel: joinServerChannel,
   partChannel: partServerChannel,
-  setLobbyScore,
-  setLobbySettings,
   refreshLobbyTitle,
   setActiveWinCondition,
   makeLazerRoom,
@@ -164,9 +176,7 @@ const {
   editLazerCurrentPlaylistItem,
   sendLazerChatMessage,
   rollLazer,
-  leaveLazerRoom,
   changeLazerRoomSettings,
-  loadLazerChat,
   addLazerReferee,
   removeLazerReferee,
   stopLazerMatchCountdown,
@@ -176,14 +186,32 @@ const {
   startUpdate,
   cancelUpdate,
   confirmInstall,
+  requestChatsList,
+  requestChatHistory,
+  requestSettings,
+  setServerSetting,
+  requestLobbyState,
+  setLobbyMatch,
+  setLobbyMapState,
+  clearLobbyMapState,
+  setLobbyActivePool,
+  setLobbyQualificationMode,
+  archiveChat: archiveServerChat,
+  deleteChats: deleteServerChats,
 } = useServerConnection();
 const connected = computed(() => serverState.value === "ready");
 const toast = useToast();
 const loginToastGroup = "irc-login";
 const launchedAfterUpdate = new URLSearchParams(window.location.search).has("updated");
 const { activePreset } = useLobbyMessages();
-const { getActivePool, getMapState, setMapState, getQualificationMode, hasQualificationMode, setQualificationMode } = useMappool();
-const { getActivePool: getLazerActivePool, getMapState: getLazerMapState, setMapState: setLazerMapState } = useMappool("lazer");
+const { getActivePool, getMapState, setMapState, getQualificationMode, setQualificationMode } = useMappool();
+const {
+  getActivePool: getLazerActivePool,
+  getMapState: getLazerMapState,
+  setMapState: setLazerMapState,
+  getQualificationMode: getLazerQualificationMode,
+  setQualificationMode: setLazerQualificationMode,
+} = useMappool("lazer");
 const { soundEnabled, toastEnabled, ignoreBanchoBot, sound, soundTrigger, toastTrigger } = useNotifications();
 const { showNowPlaying, showProgressBar, showProgressTimeLabel } = useNowPlayingSettings();
 const nowPlayingByLobby = reactive({});
@@ -259,6 +287,32 @@ const highlightColorModes = [
 const timestampModes = [
   { label: "Minutes", value: "minutes" },
   { label: "Full", value: "full" },
+];
+const archiveRetentionOptions = [
+  { label: "Never", value: null },
+  { label: "3 days", value: 3 },
+  { label: "7 days", value: 7 },
+  { label: "1 month", value: 30 },
+  { label: "6 months", value: 180 },
+  { label: "1 Year", value: 365 },
+];
+const archiveTimestampFormats = [
+  { label: "Yesterday/Today", value: "relative" },
+  { label: "DD.MM.YYYY → 09.11.2026", value: "DD.MM.YYYY" },
+  { label: "DD/MM/YYYY → 09/11/2026", value: "DD/MM/YYYY" },
+  { label: "DD-MM-YYYY → 09-11-2026", value: "DD-MM-YYYY" },
+  { label: "MM/DD/YYYY → 11/09/2026", value: "MM/DD/YYYY" },
+  { label: "MM-DD-YYYY → 11-09-2026", value: "MM-DD-YYYY" },
+  { label: "YYYY-MM-DD → 2026-11-09", value: "YYYY-MM-DD" },
+  { label: "YYYY/MM/DD → 2026/11/09", value: "YYYY/MM/DD" },
+  { label: "YYYY.MM.DD → 2026.11.09", value: "YYYY.MM.DD" },
+  { label: "DD.MM.YY → 09.11.26", value: "DD.MM.YY" },
+  { label: "MM/DD/YY → 11/09/26", value: "MM/DD/YY" },
+  { label: "D MMM YYYY → 9 Nov 2026", value: "D MMM YYYY" },
+  { label: "D MMMM YYYY → 9 November 2026", value: "D MMMM YYYY" },
+  { label: "MMM D, YYYY → Nov 9, 2026", value: "MMM D, YYYY" },
+  { label: "MMMM D, YYYY → November 9, 2026", value: "MMMM D, YYYY" },
+  { label: "ddd, D MMM YYYY → Mon, 9 Nov 2026", value: "ddd, D MMM YYYY" },
 ];
 const notificationSounds = NOTIFICATION_SOUNDS;
 const notificationTriggers = NOTIFICATION_TRIGGER_OPTIONS;
@@ -423,16 +477,106 @@ watch(
   (event) => {
     if (handleLazerError(event)) return;
 
+    if (event?.type === "settings_response" || event?.type === "settings_updated") {
+      const days = event.settings?.["archive.autoDeleteDays"];
+      archiveAutoDeleteDays.value = Number.isSafeInteger(days) && days > 0 ? days : null;
+      archiveSettingsLoaded.value = true;
+      return;
+    }
+
+    if (event?.type === "chats_list_response") {
+      serverChatListRequested = true;
+      for (const chatId of Object.keys(serverChatsById)) delete serverChatsById[chatId];
+      for (const chat of event.chats || []) rememberServerChat(chat);
+      archiveLoading.value = false;
+      const pendingMessages = pendingServerMessages.splice(0);
+      for (const message of pendingMessages) handleServerChatMessage(message);
+      return;
+    }
+
+    if (event?.type === "chat_lobby_state_response" || event?.type === "chat_lobby_state_updated") {
+      const chat = serverChatsById[event.chatId];
+      const localId = chat ? serverChatLocalId(chat) : null;
+      pendingLobbyServerStates.set(Number(event.chatId), event.lobbyState);
+      if (chat && localId) applyServerLobbyDocument(chat, localId, event.lobbyState);
+      return;
+    }
+
+    if (event?.type === "chat_updated") {
+      if (event.chat?.status === "archived") {
+        removeArchivedChatFromUi(event.chat);
+        serverChatsById[event.chat.id] = event.chat;
+        const archivedLocalId = serverChatLocalId(event.chat);
+        if (archivedLocalId) pendingLobbyOperations.delete(archivedLocalId);
+        requestedChatHistories.delete(event.chat.id);
+        return;
+      }
+      rememberServerChat(event.chat);
+      const matchingMessages = pendingServerMessages.filter((message) => Number(message.chatId) === Number(event.chat?.id));
+      for (const message of matchingMessages) handleServerChatMessage(message);
+      for (let index = pendingServerMessages.length - 1; index >= 0; index -= 1) {
+        if (Number(pendingServerMessages[index].chatId) === Number(event.chat?.id)) pendingServerMessages.splice(index, 1);
+      }
+      return;
+    }
+
+    if (event?.type === "chat_deleted") {
+      const restoredLocalId = restoredArchivedChats[event.chatId];
+      const wasActiveRestoredChat = activeChat.value === restoredLocalId;
+      removeRestoredArchivedChat(event.chatId);
+      delete serverChatsById[event.chatId];
+      requestedChatHistories.delete(event.chatId);
+      delete archiveActionBusy[event.chatId];
+      if (wasActiveRestoredChat) activeChat.value = "bancho";
+      return;
+    }
+
+    if (event?.type === "error" && event.request === "chat_archive") {
+      toast.add({ severity: "error", summary: "Archive failed", detail: event.message || "Unable to archive this chat.", life: 5000 });
+      return;
+    }
+
+    if (event?.type === "error" && event.request === "chats_list") {
+      serverChatListRequested = false;
+      archiveLoading.value = false;
+      toast.add({ severity: "error", summary: "Archive unavailable", detail: event.message || "Unable to load archived chats.", life: 5000 });
+      return;
+    }
+
+    if (event?.type === "error" && event.request === "chat_delete") {
+      for (const chatId of Object.keys(archiveActionBusy)) delete archiveActionBusy[chatId];
+      toast.add({ severity: "error", summary: "Delete failed", detail: event.message || "Unable to delete this chat.", life: 5000 });
+      return;
+    }
+
+    if (event?.type === "error" && event.request === "chat_history") {
+      if (event.chatId !== undefined) {
+        delete archiveActionBusy[event.chatId];
+      }
+      toast.add({ severity: "error", summary: "History unavailable", detail: event.message || "Unable to load this chat history.", life: 5000 });
+      return;
+    }
+
+    if (event?.type === "chat_history_response") {
+      const chat = serverChatsById[event.chatId];
+      if (chat?.status === "archived") {
+        const localId = restoredArchivedChats[event.chatId];
+        if (localId) channelMessages[localId] = (event.messages || []).map(normalizeServerChatMessage).filter(Boolean);
+        delete archiveActionBusy[event.chatId];
+      } else if (chat) replaceServerChatHistory(chat, event.messages || []);
+      return;
+    }
+
+    if (event?.type === "chat_message") {
+      handleServerChatMessage(event.message);
+      return;
+    }
+
     const legacyCommand = event?.requestId ? pendingLazerLegacyCommands.get(event.requestId) : null;
     if (legacyCommand && ((event.type === "ack" && event.received === legacyCommand.type) || (event.type === "error" && event.request === legacyCommand.type))) {
       pendingLazerLegacyCommands.delete(event.requestId);
       if (legacyCommand.timeoutId) window.clearTimeout(legacyCommand.timeoutId);
       appendWhistleBotMessage(legacyCommand.roomId, event.type === "ack" ? legacyCommand.success : legacyCommand.failure);
-      return;
-    }
-
-    if (event?.type === "lazer_chat_history") {
-      appendLazerChatHistory(event.roomId, event.messages, event.users);
       return;
     }
 
@@ -445,11 +589,6 @@ watch(
           message.awaitingEcho = true;
         }
       }
-      return;
-    }
-
-    if (event?.type === "lazer_chat_message") {
-      appendLazerChatMessage(event.roomId, event.message, event.users, true);
       return;
     }
 
@@ -616,23 +755,6 @@ watch(
 
     const rollEvent = lazerEvent?.eventType === "RollCompleted" ? { ...lazerEventPayload, roomId: lazerEventRoomId } : null;
     if (rollEvent) {
-      const roomId = Number(rollEvent.roomId);
-      const chatId = lazerChatId(roomId);
-      const userId = Number(rollEvent.user_id ?? rollEvent.userId);
-      const player = (lazerRooms[chatId]?.players || []).find((candidate) => Number(candidate.user_id) === userId);
-      const author = lazerUserProfiles[userId]?.username || (Number(osuProfile.value?.id) === userId ? currentUser.value : player?.username) || `User ${userId}`;
-      const result = Number(rollEvent.result);
-      const max = Number(rollEvent.max) || 100;
-      if (Number.isFinite(result)) {
-        appendChatMessage(chatId, {
-          id: `roll-${roomId}-${userId}-${Date.now()}`,
-          type: "system",
-          author: "system",
-          text: `${author} rolled ${result} points out of ${max}.`,
-          time: new Date().toISOString(),
-          isRoll: true,
-        });
-      }
       return;
     }
 
@@ -643,19 +765,13 @@ watch(
         requestLazerInviteJoin(invitedRoomId);
         return;
       }
-      const room = registerLazerRoom(event.room);
-      if (room && !lazerChatRoomsBeingLoaded.has(Number(room.room_id))) {
-        const roomId = Number(room.room_id);
-        lazerChatRoomsBeingLoaded.add(roomId);
-        if (!loadLazerChat(roomId)) lazerChatRoomsBeingLoaded.delete(roomId);
-      }
+      registerLazerRoom(event.room);
       return;
     }
 
     if (event?.type === "lazer_room_closed") {
       const id = lazerChatId(Number(event.roomId));
       markLazerRoomClosed(id, { clearResources: true });
-      lazerChatRoomsBeingLoaded.delete(Number(event.roomId));
       return;
     }
 
@@ -683,8 +799,14 @@ watch(
         if (lobby) {
           lobby.teamAName = seed.teamRed;
           lobby.teamBName = seed.teamBlue;
-          lobby.qualificationMode = seed.qualificationMode === true;
+          setLazerQualificationMode(room.id, seed.qualificationMode === true);
           lobby.bestOf = Number.isInteger(seed.bestOf) && seed.bestOf > 0 ? seed.bestOf : null;
+          persistLobbyMatch(room.id, {
+            teamRed: lobby.teamAName,
+            teamBlue: lobby.teamBName,
+            bestOf: lobby.bestOf,
+            nextPickTeam: lobby.nextPickTeam || null,
+          });
           lobby.matchStatus = getMatchStatus(
             { bestOf: lobby.bestOf, nextPickTeam: lobby.nextPickTeam, teamRedScore: lobby.teamAScore, teamBlueScore: lobby.teamBScore },
             lobby.teamAName,
@@ -745,21 +867,10 @@ watch(
       const chatId = channelId(event.channel);
       if (!chatId || !joinedChannels.value.some((channel) => channel.id === chatId)) return;
       winConditionResultsByChat[chatId] = event.result || null;
-      for (const message of event.systemMessages || []) {
-        appendChatMessage(chatId, {
-          id: nextId++,
-          type: "system",
-          text: message,
-        });
-      }
       return;
     }
 
     if (event?.type === "lobby_system_message") {
-      const chatId = channelId(event.channel);
-      if (chatId && joinedChannels.value.some((channel) => channel.id === chatId)) {
-        appendChatMessage(chatId, { id: nextId++, type: "system", text: event.text });
-      }
       return;
     }
 
@@ -784,9 +895,12 @@ watch(
           channel.lobby = seededLobby;
           lobbyStates[channel.id] = seededLobby;
           setQualificationMode(channel.id, seededLobby.qualificationMode === true);
-          if (Number.isInteger(seededLobby.bestOf) && seededLobby.bestOf > 0) {
-            setLobbySettings(channel.label, seededLobby.bestOf, seededLobby.nextPickTeam);
-          }
+          persistLobbyMatch(channel.id, {
+            teamRed: seededLobby.teamRed,
+            teamBlue: seededLobby.teamBlue,
+            bestOf: Number.isInteger(seededLobby.bestOf) && seededLobby.bestOf > 0 ? seededLobby.bestOf : null,
+            nextPickTeam: seededLobby.nextPickTeam || null,
+          });
         }
         pendingLobbySeed.value = null;
         pendingLobbyCreatedViaApp.value = false;
@@ -862,6 +976,8 @@ watch(
         }
       }
     }
+
+    if (joinedChannel) return;
 
     appendChatMessage(
       chatId,
@@ -1108,7 +1224,6 @@ function handleLogout() {
   Object.keys(lobbyStates).forEach((channelIdValue) => {
     delete lobbyStates[channelIdValue];
   });
-  lazerChatRoomsBeingLoaded.clear();
   Object.keys(lazerRooms).forEach((chatId) => delete lazerRooms[chatId]);
   Object.keys(lazerLobbyStates).forEach((chatId) => delete lazerLobbyStates[chatId]);
   Object.keys(lobbyContexts).forEach((channelIdValue) => {
@@ -1120,6 +1235,11 @@ function handleLogout() {
   Object.keys(unreadChats).forEach((chatId) => {
     if (chatId !== "bancho") delete unreadChats[chatId];
   });
+  for (const chatId of Object.keys(serverChatsById)) delete serverChatsById[chatId];
+  for (const chatId of Object.keys(restoredArchivedChats)) delete restoredArchivedChats[chatId];
+  for (const chatId of Object.keys(archiveActionBusy)) delete archiveActionBusy[chatId];
+  archiveOpen.value = false;
+  archiveLoading.value = false;
   activeChat.value = "bancho";
   logoutFromServer();
   void clearRememberedCredentials();
@@ -1305,6 +1425,16 @@ function handleCopyCallback() {
   });
 }
 
+function updateArchiveRetention(days) {
+  const normalized = Number.isSafeInteger(days) && days > 0 ? days : null;
+  const previous = archiveAutoDeleteDays.value;
+  archiveAutoDeleteDays.value = normalized;
+  if (!setServerSetting("archive.autoDeleteDays", normalized)) {
+    archiveAutoDeleteDays.value = previous;
+    toast.add({ severity: "error", summary: "Archive setting failed", detail: "The server connection is not available.", life: 5000 });
+  }
+}
+
 onMounted(async () => {
   if (launchedAfterUpdate) {
     const url = new URL(window.location.href);
@@ -1405,8 +1535,13 @@ const banchoMessages = ref([
 const roomClosedByChat = reactive({});
 const winConditionResultsByChat = reactive({});
 
-const activeMessages = computed(() => (activeChat.value === "bancho" ? banchoMessages.value : channelMessages[activeChat.value] || []));
 const activeDirectChat = computed(() => directChats.value.find((item) => item.id === activeChat.value) || null);
+const archivedChats = computed(() =>
+  Object.values(serverChatsById)
+    .filter((chat) => chat.status === "archived")
+    .sort((left, right) => String(right.archivedAt || "").localeCompare(String(left.archivedAt || ""))),
+);
+const activeMessages = computed(() => (activeChat.value === "bancho" ? banchoMessages.value : channelMessages[activeChat.value] || []));
 function lazerChatId(roomId) {
   return `lazer:${roomId}`;
 }
@@ -1506,47 +1641,90 @@ function handleLazerError(event) {
   return true;
 }
 
-function normalizeLazerChatMessage(message, users = []) {
-  if (!message || typeof message !== "object") return null;
-  const source = message;
-  const senderId = Number(source.sender_id ?? source.user_id ?? source.sender?.id);
-  const usersById = new Map((Array.isArray(users) ? users : []).map((user) => [Number(user.user_id ?? user.id), user]));
-  const sender = source.sender || (Number.isInteger(senderId) ? usersById.get(senderId) : null);
-  const author = String(source.username || source.sender_username || sender?.username || source.sender_name || `User ${senderId || ""}`).trim();
-  const text = String(source.content ?? source.message ?? source.text ?? "");
-  if (!text) return null;
+function normalizeServerChatMessage(message) {
+  if (!message || !Number.isSafeInteger(Number(message.id))) return null;
+  const kind = String(message.kind || "message");
+  let author = message.author || "";
+  let text = String(message.text || "");
+  const isRoll = kind === "roll";
+  if (isRoll) {
+    const roll = text.match(/^(.+?) rolled (.+)$/);
+    if (roll) {
+      author = roll[1];
+      text = roll[2];
+    }
+  }
   return {
-    id: source.message_id ?? source.id ?? `lazer-${Date.now()}-${Math.random()}`,
-    senderId: Number.isInteger(senderId) ? senderId : null,
-    author,
+    id: `server:${message.id}`,
+    serverMessageId: Number(message.id),
+    type: ["system", "service", "event", "roll"].includes(kind) ? "system" : undefined,
+    author: author || "Unknown",
     text,
-    time: source.created_at || source.timestamp || source.time || new Date().toISOString(),
-    isAction: Boolean(source.is_action),
+    time: message.createdAt || new Date().toISOString(),
+    isAction: kind === "action",
+    isRoll,
   };
 }
 
-function appendLazerChatHistory(roomId, messages, users = []) {
-  const chatId = lazerChatId(Number(roomId));
-  const normalized = (Array.isArray(messages) ? messages : []).map((message) => normalizeLazerChatMessage(message, users)).filter(Boolean);
-  // History may arrive after live messages or local system notifications.
-  const historyIds = new Set(normalized.map((message) => String(message.id)));
-  const newer = (channelMessages[chatId] || []).filter((message) => !historyIds.has(String(message.id)));
-  channelMessages[chatId] = [...normalized, ...newer];
-  unreadChats[chatId] ??= false;
+function reconcilePendingServerMessage(chatId, normalized) {
+  const list = channelMessages[chatId] || [];
+  const pending = list.find((item) =>
+    (item._serverPending || item.pending || item.awaitingEcho) &&
+    normalizeIrcNick(item.author) === normalizeIrcNick(normalized.author) &&
+    item.text === normalized.text,
+  );
+  if (!pending) return false;
+  Object.assign(pending, normalized, { _serverPending: false, pending: false, awaitingEcho: false });
+  return true;
 }
 
-function appendLazerChatMessage(roomId, message, users = [], notify = true) {
-  const normalized = normalizeLazerChatMessage(message, users);
-  if (!normalized) return;
-  const chatId = lazerChatId(Number(roomId));
-  const list = (channelMessages[chatId] ||= []);
-  const pending = list.find((item) => (item.pending || item.awaitingEcho) && normalizeIrcNick(item.author) === normalizeIrcNick(normalized.author) && item.text === normalized.text);
-  if (pending) {
-    Object.assign(pending, normalized, { pending: false, awaitingEcho: false });
+function handleServerChatMessage(message) {
+  const chat = serverChatsById[message?.chatId];
+  if (!chat) {
+    if (message && !pendingServerMessages.some((item) => Number(item.id) === Number(message.id))) pendingServerMessages.push(message);
+    if (pendingServerMessages.length > 500) pendingServerMessages.shift();
+    if (!serverChatListRequested) serverChatListRequested = requestChatsList(["active", "closed", "archived"]);
     return;
   }
-  if (list.some((item) => String(item.id) === String(normalized.id))) return;
-  appendChatMessage(chatId, normalized, { notify: notify && normalized.author !== currentUser.value });
+  const chatId = serverChatLocalId(chat);
+  const normalized = normalizeServerChatMessage(message);
+  if (!chatId || !normalized) return;
+  const list = (channelMessages[chatId] ||= []);
+  if (list.some((item) => item.serverMessageId === normalized.serverMessageId)) return;
+  if (reconcilePendingServerMessage(chatId, normalized)) return;
+  appendChatMessage(chatId, normalized, {
+    notify: ["message", "action"].includes(message.kind) && normalizeIrcNick(normalized.author) !== normalizeIrcNick(currentUser.value),
+  });
+}
+
+function replaceServerChatHistory(chat, messages) {
+  const chatId = serverChatLocalId(chat);
+  if (!chatId) return;
+  const existing = channelMessages[chatId] || [];
+  const merged = new Map();
+  for (const message of messages) {
+    const normalized = normalizeServerChatMessage(message);
+    if (!normalized) continue;
+    const pending = existing.find((item) =>
+      (item._serverPending || item.pending || item.awaitingEcho) &&
+      normalizeIrcNick(item.author) === normalizeIrcNick(normalized.author) &&
+      item.text === normalized.text,
+    );
+    if (pending) Object.assign(pending, normalized, { _serverPending: false, pending: false, awaitingEcho: false });
+    merged.set(normalized.serverMessageId, pending || normalized);
+  }
+  for (const message of existing) {
+    if (message.serverMessageId === undefined || !merged.has(message.serverMessageId)) {
+      merged.set(message.serverMessageId === undefined ? `local:${message.id}` : message.serverMessageId, message);
+    }
+  }
+  channelMessages[chatId] = [...merged.values()].sort((left, right) => {
+    const timeOrder = new Date(left.time).getTime() - new Date(right.time).getTime();
+    if (Number.isFinite(timeOrder) && timeOrder !== 0) return timeOrder;
+    return Number(left.serverMessageId || 0) - Number(right.serverMessageId || 0);
+  });
+  unreadChats[chatId] ??= false;
+  resetStableMessagePhases(chatId);
 }
 
 function loadLazerUserProfile(roomId, userId) {
@@ -1613,6 +1791,12 @@ function registerLazerRoom(room) {
     nextPickTeam: previousState.nextPickTeam ?? null,
     matchStatus: previousState.matchStatus || "—",
   };
+  const serverChat = findServerChatForLocalId(id);
+  const pendingState = serverChat ? pendingLobbyServerStates.get(Number(serverChat.id)) : null;
+  if (serverChat && pendingState) {
+    applyServerLobbyDocument(serverChat, id, pendingState);
+    pendingLobbyServerStates.delete(Number(serverChat.id));
+  }
   channelMessages[id] ||= [];
   unreadChats[id] ??= false;
   // A room snapshot is authoritative for playlist contents. If a one-map
@@ -1851,6 +2035,23 @@ watch(
   },
   { immediate: true },
 );
+watch(isAuthenticated, (authenticated) => {
+  for (const chatId of Object.keys(serverChatsById)) delete serverChatsById[chatId];
+  requestedChatHistories.clear();
+  requestedLobbyStates.clear();
+  pendingLobbyServerStates.clear();
+  pendingLobbyOperations.clear();
+  pendingServerMessages.length = 0;
+  serverChatListRequested = authenticated ? requestChatsList(["active", "closed", "archived"]) : false;
+  archiveSettingsLoaded.value = false;
+  if (authenticated) requestSettings();
+});
+watch(archiveTimestampFormat, (value) => {
+  const allowed = archiveTimestampFormats.some((option) => option.value === value);
+  const normalized = allowed ? value : "relative";
+  if (normalized !== value) archiveTimestampFormat.value = normalized;
+  localStorage.setItem(ARCHIVE_TIMESTAMP_KEY, normalized);
+});
 const isBanchoChat = computed(() => activeChatKind.value === "bancho");
 const isDirectChat = computed(() => activeChatKind.value === "dm");
 const isLazerChat = computed(() => activeChatKind.value === "lazer");
@@ -1916,10 +2117,8 @@ const activeLazerTeamBScore = computed({
   set: (value) => updateActiveLazerScore("teamBScore", value),
 });
 const activeLazerQualificationMode = computed({
-  get: () => Boolean(activeLazerLobbyState.value?.qualificationMode),
-  set: (value) => {
-    if (activeLazerLobbyState.value) activeLazerLobbyState.value.qualificationMode = Boolean(value);
-  },
+  get: () => getLazerQualificationMode(activeChat.value),
+  set: (value) => setLazerQualificationMode(activeChat.value, value),
 });
 const activeLobbyPlayers = computed(() => {
   const lobby = activeLobbyState.value;
@@ -2143,6 +2342,116 @@ function channelId(channel) {
   return multiplayerMatch ? `mp-${multiplayerMatch[1]}` : normalizedChannel;
 }
 
+function serverChatLocalId(chat) {
+  const externalId = Number(chat?.externalId);
+  if (!Number.isSafeInteger(externalId) || externalId <= 0) return null;
+  if (chat.platform === "stable") return `mp-${externalId}`;
+  if (chat.platform === "lazer") return lazerChatId(externalId);
+  return null;
+}
+
+function requestServerChatHistory(chat) {
+  if (!chat || chat.status !== "active" || requestedChatHistories.has(chat.id)) return;
+  requestedChatHistories.add(chat.id);
+  if (!requestChatHistory(chat.id)) requestedChatHistories.delete(chat.id);
+}
+
+function requestServerLobbyState(chat, allowArchived = false) {
+  if (!chat || !["stable", "lazer"].includes(chat.platform) || !Number.isSafeInteger(Number(chat.id)) || (!allowArchived && chat.status === "archived") || requestedLobbyStates.has(chat.id)) return;
+  requestedLobbyStates.add(chat.id);
+  if (!requestLobbyState(chat.id)) requestedLobbyStates.delete(chat.id);
+}
+
+function rememberServerChat(chat) {
+  if (!chat || !Number.isSafeInteger(Number(chat.id))) return;
+  serverChatsById[chat.id] = chat;
+  const localId = serverChatLocalId(chat);
+  const queuedOperations = localId ? pendingLobbyOperations.get(localId) : null;
+  if (queuedOperations?.length && chat.status !== "archived") {
+    const delivered = queuedOperations.every((operation) => sendLobbyOperation(chat, operation));
+    if (delivered) pendingLobbyOperations.delete(localId);
+  }
+  requestServerChatHistory(chat);
+  requestServerLobbyState(chat);
+  const pendingState = pendingLobbyServerStates.get(Number(chat.id));
+  if (pendingState && localId) {
+    applyServerLobbyDocument(chat, localId, pendingState);
+    const localExists = chat.platform === "stable" ? joinedChannels.value.some((item) => item.id === localId) : Boolean(lazerRooms[localId]);
+    if (localExists) pendingLobbyServerStates.delete(Number(chat.id));
+  }
+}
+
+function sendLobbyOperation(chat, operation) {
+  if (!chat || chat.status === "archived") return false;
+  if (operation.type === "match") return setLobbyMatch(chat.id, operation.patch);
+  if (operation.type === "map") return setLobbyMapState(chat.id, operation.slot, operation.patch);
+  if (operation.type === "clear_maps") return clearLobbyMapState(chat.id);
+  if (operation.type === "active_pool") return setLobbyActivePool(chat.id, operation.poolId);
+  if (operation.type === "qualification") return setLobbyQualificationMode(chat.id, operation.enabled);
+  return false;
+}
+
+function findServerChatForLocalId(localId) {
+  return Object.values(serverChatsById).find((chat) => serverChatLocalId(chat) === localId) || null;
+}
+
+function applyServerLobbyDocument(chat, localId, document) {
+  if (!chat || !document || !localId) return;
+  const mode = chat.platform === "lazer" ? "lazer" : "stable";
+  applyServerLobbyState(mode, localId, document.maps || {});
+  const match = document.match && typeof document.match === "object" ? document.match : {};
+  if (mode === "stable") {
+    const channel = joinedChannels.value.find((item) => item.id === localId);
+    if (!channel?.lobby) return;
+    const lobby = channel.lobby;
+    for (const field of ["teamRed", "teamBlue", "teamRedScore", "teamBlueScore", "bestOf", "nextPickTeam", "lastPlay"]) {
+      if (Object.prototype.hasOwnProperty.call(match, field)) lobby[field] = match[field];
+    }
+    lobby.matchStatus = getMatchStatus(lobby, lobby.teamRed || "Team A", lobby.teamBlue || "Team B");
+    lobbyStates[localId] = lobby;
+  } else {
+    const lobby = lazerLobbyStates[localId];
+    if (!lobby) return;
+    if (match.teamRed !== undefined) lobby.teamAName = match.teamRed;
+    if (match.teamBlue !== undefined) lobby.teamBName = match.teamBlue;
+    if (match.teamRedScore !== undefined) lobby.teamAScore = match.teamRedScore;
+    if (match.teamBlueScore !== undefined) lobby.teamBScore = match.teamBlueScore;
+    if (match.bestOf !== undefined) lobby.bestOf = match.bestOf;
+    if (match.nextPickTeam !== undefined) lobby.nextPickTeam = match.nextPickTeam;
+    if (match.lastPlay !== undefined) lobby.lastPlay = match.lastPlay;
+    lobby.matchStatus = getMatchStatus({ bestOf: lobby.bestOf, nextPickTeam: lobby.nextPickTeam, teamRedScore: lobby.teamAScore, teamBlueScore: lobby.teamBScore }, lobby.teamAName, lobby.teamBName);
+  }
+}
+
+configureLobbyStateSync(({ operation, lobbyId, slot, patch, poolId, enabled }) => {
+  const chat = findServerChatForLocalId(lobbyId);
+  const payload = operation === "map" ? { type: operation, slot, patch } : operation === "active_pool" ? { type: operation, poolId } : operation === "qualification" ? { type: operation, enabled } : { type: operation };
+  if (chat) sendLobbyOperation(chat, payload);
+  else {
+    const queue = pendingLobbyOperations.get(lobbyId) || [];
+    queue.push(payload);
+    pendingLobbyOperations.set(lobbyId, queue);
+  }
+});
+
+function persistLobbyMatch(localId, patch) {
+  const chat = findServerChatForLocalId(localId);
+  if (chat) return sendLobbyOperation(chat, { type: "match", patch });
+  const queue = pendingLobbyOperations.get(localId) || [];
+  queue.push({ type: "match", patch });
+  pendingLobbyOperations.set(localId, queue);
+  return true;
+}
+
+function resetStableMessagePhases(chatId) {
+  if (!joinedChannels.value.some((channel) => channel.id === chatId)) return;
+  const context = createMappoolChatContext();
+  lobbyContexts[chatId] = context;
+  for (const message of channelMessages[chatId] || []) {
+    message.phaseAtMessage = advanceMappoolChatContext(context, message, { roomClosed: Boolean(roomClosedByChat[chatId]) });
+  }
+}
+
 function directChatId(nick) {
   return `dm:${normalizeIrcNick(nick)}`;
 }
@@ -2201,8 +2510,15 @@ function addJoinedChannel(channelName) {
   };
   joinedChannels.value.push(channel);
   lobbyStates[channel.id] = channel.lobby;
-  channelMessages[channel.id] = [];
-  lobbyContexts[channel.id] = createMappoolChatContext();
+  channelMessages[channel.id] ||= [];
+  lobbyContexts[channel.id] ||= createMappoolChatContext();
+  resetStableMessagePhases(channel.id);
+  const serverChat = findServerChatForLocalId(channel.id);
+  const pendingState = serverChat ? pendingLobbyServerStates.get(Number(serverChat.id)) : null;
+  if (serverChat && pendingState) {
+    applyServerLobbyDocument(serverChat, channel.id, pendingState);
+    pendingLobbyServerStates.delete(Number(serverChat.id));
+  }
   unreadChats[channel.id] = false;
   return channel;
 }
@@ -2285,9 +2601,6 @@ function applyLobbyState(event) {
   channel.lobby = nextLobby;
   lobbyStates[eventChannelId] = nextLobby;
   cacheLobbyPlayers(eventChannelId, nextLobby.players);
-  if (!hasQualificationMode(eventChannelId)) {
-    setQualificationMode(eventChannelId, nextLobby.qualificationMode === true || nextLobby.qualifiers === true);
-  }
   channel.closed = channel.lobby.status === "closed";
 
   if (channel.closed) {
@@ -2305,7 +2618,7 @@ function updateActiveLobbyScore(field, value) {
   if (channel.lobby[field] === score) return;
   channel.lobby[field] = score;
   channel.lobby.matchStatus = getMatchStatus(channel.lobby, channel.lobby.teamRed || "Team A", channel.lobby.teamBlue || "Team B");
-  setLobbyScore(channel.label, channel.lobby.teamRedScore, channel.lobby.teamBlueScore);
+  persistLobbyMatch(channel.id, { [field]: score });
 }
 
 function updateActiveLobbySettings(settings) {
@@ -2317,14 +2630,16 @@ function updateActiveLobbySettings(settings) {
   channel.lobby.bestOf = bestOf;
   channel.lobby.nextPickTeam = nextPickTeam;
   channel.lobby.matchStatus = getMatchStatus(channel.lobby, channel.lobby.teamRed || "Team A", channel.lobby.teamBlue || "Team B");
-  setLobbySettings(channel.label, bestOf, nextPickTeam);
+  persistLobbyMatch(channel.id, { bestOf, nextPickTeam });
 }
 
 function updateActiveLazerScore(field, value) {
   const lobby = activeLazerLobbyState.value;
   if (!lobby || !["teamAScore", "teamBScore"].includes(field)) return;
-  lobby[field] = Math.max(0, Number.parseInt(value, 10) || 0);
+  const score = Math.max(0, Number.parseInt(value, 10) || 0);
+  lobby[field] = score;
   lobby.matchStatus = getMatchStatus({ bestOf: lobby.bestOf, nextPickTeam: lobby.nextPickTeam, teamRedScore: lobby.teamAScore, teamBlueScore: lobby.teamBScore }, lobby.teamAName, lobby.teamBName);
+  persistLobbyMatch(activeChat.value, { [field === "teamAScore" ? "teamRedScore" : "teamBlueScore"]: score });
 }
 
 function updateActiveLazerSettings(settings) {
@@ -2333,6 +2648,7 @@ function updateActiveLazerSettings(settings) {
   lobby.bestOf = Number.isInteger(settings.bestOf) && settings.bestOf > 0 ? settings.bestOf : null;
   lobby.nextPickTeam = settings.nextPickTeam || null;
   lobby.matchStatus = getMatchStatus({ bestOf: lobby.bestOf, nextPickTeam: lobby.nextPickTeam, teamRedScore: lobby.teamAScore, teamBlueScore: lobby.teamBScore }, lobby.teamAName, lobby.teamBName);
+  persistLobbyMatch(activeChat.value, { bestOf: lobby.bestOf, nextPickTeam: lobby.nextPickTeam });
 }
 
 function applyRefereeConfirmation(channel, text) {
@@ -2367,6 +2683,116 @@ function removeJoinedChannel(channelName) {
   delete unreadChats[channel.id];
   delete lobbyStates[channel.id];
   delete lobbyContexts[channel.id];
+  delete roomClosedByChat[channel.id];
+  delete nowPlayingByLobby[channel.id];
+}
+
+function removeLazerRoomFromUi(chatId) {
+  const room = lazerRooms[chatId];
+  if (room) {
+    delete lazerStyleChangedUsers[Number(room.room_id)];
+    for (const key of Object.keys(lazerStyleBeatmaps)) {
+      if (key.startsWith(`${room.room_id}:`)) delete lazerStyleBeatmaps[key];
+    }
+    clearLazerPlaylistRestore(Number(room.room_id));
+    clearLazerCountdown(room.room_id);
+    delete lazerCompletedBeatmaps[Number(room.room_id)];
+  }
+  delete lazerRooms[chatId];
+  delete lazerLobbyStates[chatId];
+  delete channelMessages[chatId];
+  delete unreadChats[chatId];
+  delete nowPlayingByLobby[chatId];
+  if (activeChat.value === chatId) {
+    activeChat.value = "bancho";
+    unreadChats.bancho = false;
+    settingsOpen.value = false;
+  }
+}
+
+function removeArchivedChatFromUi(chat) {
+  const localId = serverChatLocalId(chat);
+  if (!localId) return;
+  if (chat.platform === "stable") {
+    const channel = joinedChannels.value.find((item) => item.id === localId);
+    if (channel) removeJoinedChannel(channel.label);
+  } else if (chat.platform === "lazer") {
+    removeLazerRoomFromUi(localId);
+  }
+}
+
+function restoreArchivedChatInSidebar(chat) {
+  const externalId = Number(chat?.externalId);
+  if (!chat || chat.status !== "archived" || !Number.isSafeInteger(externalId) || externalId <= 0) return null;
+
+  if (chat.platform === "stable") {
+    const localId = `mp-${externalId}`;
+    const channel = addJoinedChannel(`#mp_${externalId}`);
+    if (!channel) return null;
+    channel.label = `#mp_${externalId}`;
+    channel.source = "irc";
+    channel.archivedChatId = chat.id;
+    channel.closed = true;
+    channel.referees = [];
+    channel.lobby = {
+      ...createDefaultLobbyState(channel.label),
+      id: externalId,
+      name: chat.title || channel.label,
+      status: "closed",
+    };
+    lobbyStates[localId] = channel.lobby;
+    channelMessages[localId] ||= [];
+    roomClosedByChat[localId] = true;
+    const context = (lobbyContexts[localId] ||= createMappoolChatContext());
+    context.phase = "finished";
+    restoredArchivedChats[chat.id] = localId;
+    return localId;
+  }
+
+  const localId = lazerChatId(externalId);
+  lazerRooms[localId] = {
+    id: localId,
+    room_id: externalId,
+    name: chat.title || `Lazer room #${externalId}`,
+    label: chat.title || `Lazer room #${externalId}`,
+    source: "lazer",
+    archivedChatId: chat.id,
+    closed: true,
+    players: [],
+    referees: [],
+    playlist: [],
+    state: { type: "team_versus", slots: [] },
+    max_participants: 0,
+  };
+  lazerLobbyStates[localId] = {
+    id: externalId,
+    name: chat.title || `Lazer room #${externalId}`,
+    teamAName: "Team A",
+    teamBName: "Team B",
+    teamAScore: 0,
+    teamBScore: 0,
+    qualificationMode: false,
+    bestOf: null,
+    nextPickTeam: null,
+    matchStatus: "—",
+  };
+  channelMessages[localId] ||= [];
+  unreadChats[localId] = false;
+  restoredArchivedChats[chat.id] = localId;
+  return localId;
+}
+
+function removeRestoredArchivedChat(chatId) {
+  const localId = restoredArchivedChats[chatId];
+  if (!localId) return;
+  const chat = serverChatsById[chatId];
+  if (chat?.platform === "stable") {
+    const channel = joinedChannels.value.find((item) => item.id === localId);
+    if (channel) removeJoinedChannel(channel.label);
+  } else if (chat?.platform === "lazer") {
+    removeLazerRoomFromUi(localId);
+  }
+  delete restoredArchivedChats[chatId];
 }
 
 function selectChat(chatId) {
@@ -2825,7 +3251,10 @@ function downloadChatHistory() {
     if (Number.isNaN(date.getTime())) return "00:00:00";
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   };
-  const lines = messages.map((message) => `[${formatTimestamp(message.time)}] ${message.author || (message.type === "system" ? "System" : "Unknown")}: ${String(message.text || "")}`);
+  const lines = messages.map((message) => {
+    const author = message.type === "system" && !message.isRoll ? "System" : message.author || "Unknown";
+    return `[${formatTimestamp(message.time)}] ${author}: ${String(message.text || "")}`;
+  });
   const blob = new Blob([`${lines.join("\n")}\n`], { type: "text/plain;charset=utf-8" });
   const link = document.createElement("a");
   const filename =
@@ -3106,11 +3535,6 @@ function markRoomClosed(chatId) {
     channel.closed = true;
     if (channel.lobby) channel.lobby.status = "closed";
   }
-  appendChatMessage(chatId, {
-    id: nextId++,
-    type: "system",
-    text: "Room closed",
-  });
 }
 
 function markLazerRoomClosed(chatId, { clearResources = false, systemMessage = "Room closed" } = {}) {
@@ -3126,11 +3550,13 @@ function markLazerRoomClosed(chatId, { clearResources = false, systemMessage = "
   clearLazerPlaylistRestore(Number(room.room_id));
   clearLazerCountdown(room.room_id);
   if (clearResources) clearLazerRoomResourceCache(room.room_id);
-  appendChatMessage(chatId, {
-    id: nextId++,
-    type: "system",
-    text: systemMessage,
-  });
+  if (systemMessage && systemMessage !== "Room closed") {
+    appendChatMessage(chatId, {
+      id: nextId++,
+      type: "system",
+      text: systemMessage,
+    });
+  }
 }
 
 function requestLazerInviteJoin(roomId) {
@@ -3232,39 +3658,58 @@ function requestPartChannel(channelName) {
 function closeActiveChat(chatId = activeChat.value) {
   if (chatId === "bancho") return;
 
+  const restoredEntry = Object.entries(restoredArchivedChats).find(([, localId]) => localId === chatId);
+  if (restoredEntry) {
+    removeRestoredArchivedChat(Number(restoredEntry[0]));
+    if (activeChat.value === chatId) activeChat.value = "bancho";
+    return;
+  }
+
   if (directChats.value.some((chat) => chat.id === chatId)) {
     removeDirectChat(chatId);
     return;
   }
 
-  const lazerRoom = lazerRooms[chatId];
-  if (lazerRoom) {
-    leaveLazerRoom(lazerRoom.room_id);
-    delete lazerStyleChangedUsers[Number(lazerRoom.room_id)];
-    for (const key of Object.keys(lazerStyleBeatmaps)) {
-      if (key.startsWith(`${lazerRoom.room_id}:`)) delete lazerStyleBeatmaps[key];
-    }
-    clearLazerPlaylistRestore(Number(lazerRoom.room_id));
-    delete lazerRooms[chatId];
-    delete lazerLobbyStates[chatId];
-    delete channelMessages[chatId];
-    delete unreadChats[chatId];
-    if (activeChat.value === chatId) activeChat.value = "bancho";
+  const chat = findServerChatForLocalId(chatId);
+  if (!chat) {
+    toast.add({ severity: "error", summary: "Archive failed", detail: "Chat data is still loading. Try again.", life: 5000 });
     return;
   }
+  if (!archiveServerChat(chat.id)) {
+    toast.add({ severity: "error", summary: "Archive failed", detail: "The server connection is not available.", life: 5000 });
+  }
+}
 
-  const index = joinedChannels.value.findIndex((channel) => channel.id === chatId);
-  const channel = joinedChannels.value[index];
-  if (channel) requestPartChannel(channel.label);
-  if (index !== -1) joinedChannels.value.splice(index, 1);
-  delete channelMessages[chatId];
-  delete unreadChats[chatId];
-  delete roomClosedByChat[chatId];
-  delete lobbyContexts[chatId];
+function openArchiveModal() {
+  archiveOpen.value = true;
+  archiveLoading.value = requestChatsList(["active", "closed", "archived"]);
+  if (!archiveLoading.value) {
+    toast.add({ severity: "error", summary: "Archive unavailable", detail: "The server connection is not available.", life: 5000 });
+  }
+}
 
-  activeChat.value = "bancho";
-  unreadChats.bancho = false;
-  settingsOpen.value = false;
+function restoreArchivedChat(chat) {
+  const chatId = Number(chat?.id);
+  if (!Number.isSafeInteger(chatId) || chat.status !== "archived") return;
+  const localId = restoreArchivedChatInSidebar(chat);
+  if (!localId) return;
+  activeChat.value = localId;
+  requestServerLobbyState(chat, true);
+  archiveActionBusy[chatId] = true;
+  if (!requestChatHistory(chatId)) {
+    delete archiveActionBusy[chatId];
+    toast.add({ severity: "error", summary: "History unavailable", detail: "The server connection is not available.", life: 5000 });
+  }
+}
+
+function deleteArchivedChat(chat) {
+  const chatId = Number(chat?.id);
+  if (!Number.isSafeInteger(chatId) || chat.status !== "archived") return;
+  archiveActionBusy[chatId] = true;
+  if (!deleteServerChats([chatId])) {
+    delete archiveActionBusy[chatId];
+    toast.add({ severity: "error", summary: "Delete failed", detail: "The server connection is not available.", life: 5000 });
+  }
 }
 
 function handleSend(text) {
@@ -3337,6 +3782,7 @@ function handleSend(text) {
     text: resolvedText,
     time: new Date().toISOString(),
     team: lobbyPlayer?.team || null,
+    _serverPending: joinedChannels.value.some((channel) => channel.id === activeChat.value),
   });
 }
 
@@ -3687,6 +4133,15 @@ async function loadLazerMatchResult(room, playlistItemId, matchTeams = new Map()
     state.nextPickTeam = nextPickTeam;
     if (winnerTeam === "red" && (!winningScore || previousRedScore < winningScore)) state.teamAScore = previousRedScore + 1;
     if (winnerTeam === "blue" && (!winningScore || previousBlueScore < winningScore)) state.teamBScore = previousBlueScore + 1;
+    persistLobbyMatch(chatId, {
+      teamRed: state.teamAName,
+      teamBlue: state.teamBName,
+      teamRedScore: state.teamAScore,
+      teamBlueScore: state.teamBScore,
+      bestOf: state.bestOf,
+      nextPickTeam: state.nextPickTeam,
+      lastPlay: state.lastPlay,
+    });
   } catch (error) {
     toast.add({ severity: "error", summary: "Result loading failed", detail: formatLazerWsError(error?.message, "Unable to load the map result."), life: 5000 });
   }
@@ -4044,13 +4499,21 @@ function handleLazerSendResult(result) {
     :lazer-rooms="Object.values(lazerRooms)"
     @logout="handleLogout"
     @open-settings="openSettings"
-    @open-archive="archiveOpen = true"
+    @open-archive="openArchiveModal"
     @select-chat="selectChat"
     @open-create-lobby="createLobbyDialogOpen = true"
     @open-add-channel="addChannelDialogOpen = true"
     @close-chat="closeActiveChat"
   >
-    <ArchiveModal v-model:visible="archiveOpen" />
+    <ArchiveModal
+      v-model:visible="archiveOpen"
+      :chats="archivedChats"
+      :loading="archiveLoading"
+      :busy-chat-ids="archiveActionBusy"
+      :timestamp-format="archiveTimestampFormat"
+      @restore-chat="restoreArchivedChat"
+      @delete-chat="deleteArchivedChat"
+    />
     <SettingsModal v-model:visible="settingsOpen">
       <template #app>
         <section class="settings-page__section">
@@ -4271,6 +4734,48 @@ function handleLazerSendResult(result) {
         </section>
 
         <LobbyMessagesSettings v-model:visible="lobbyMessagesSettingsOpen" />
+      </template>
+
+      <template #archive>
+        <section class="settings-page__section">
+          <div class="settings-page__section-heading">
+            <h2>Archive</h2>
+          </div>
+          <div class="settings-page__setting">
+            <div class="settings-page__setting-info">
+              <h3>Chat retention</h3>
+              <p>Automatically delete archived chats after the selected period.</p>
+            </div>
+            <div class="settings-page__setting-control">
+              <Select
+                :model-value="archiveAutoDeleteDays"
+                :options="archiveRetentionOptions"
+                option-label="label"
+                option-value="value"
+                :disabled="!archiveSettingsLoaded"
+                aria-label="Archived chat retention period"
+                :pt="{ overlay: { class: 'archive-settings-select-overlay' } }"
+                @update:model-value="updateArchiveRetention"
+              />
+            </div>
+          </div>
+          <div class="settings-page__setting">
+            <div class="settings-page__setting-info">
+              <h3>Archive timestamps</h3>
+              <p>Choose how archive dates appear in the archived chats list.</p>
+            </div>
+            <div class="settings-page__setting-control">
+              <Select
+                v-model="archiveTimestampFormat"
+                :options="archiveTimestampFormats"
+                option-label="label"
+                option-value="value"
+                aria-label="Archive timestamp format"
+                :pt="{ overlay: { class: 'archive-settings-select-overlay' } }"
+              />
+            </div>
+          </div>
+        </section>
       </template>
 
       <template #shortcuts>
@@ -5351,6 +5856,37 @@ function handleLazerSendResult(result) {
   display: inline-flex;
 }
 
+.settings-page__setting-control :deep(.p-select) {
+  width: min(100%, 22rem);
+  min-height: 2.2rem;
+  border: 1px solid var(--app-border) !important;
+  border-radius: 0.55rem !important;
+  background: var(--app-control) !important;
+  color: var(--app-text) !important;
+  box-shadow: none !important;
+}
+
+.settings-page__setting-control :deep(.p-select:hover),
+.settings-page__setting-control :deep(.p-select.p-focus) {
+  border-color: rgba(var(--app-primary-rgb), 0.6) !important;
+  box-shadow: 0 0 0 1px rgba(var(--app-primary-rgb), 0.18) !important;
+}
+
+.settings-page__setting-control :deep(.p-select-label) {
+  min-width: 0;
+  padding: 0.48rem 0.7rem !important;
+  color: var(--app-text) !important;
+  font-size: 0.72rem !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-page__setting-control :deep(.p-select-dropdown) {
+  width: 2.2rem;
+  color: var(--app-muted) !important;
+}
+
 .settings-page__setting-control :deep(.p-selectbutton .p-togglebutton-content) {
   border-radius: 0;
   background: transparent !important;
@@ -5370,6 +5906,34 @@ function handleLazerSendResult(result) {
   border-color: rgba(var(--app-primary-rgb), 0.35);
   background: rgba(var(--app-primary-rgb), 0.16);
   color: var(--app-primary-bright);
+}
+
+:global(.p-select-overlay.archive-settings-select-overlay) {
+  max-width: min(32rem, calc(100vw - 2rem));
+  border: 1px solid var(--app-border) !important;
+  border-radius: 0.55rem !important;
+  background: var(--app-surface-raised) !important;
+  box-shadow: 0 0.8rem 2rem rgba(0, 0, 0, 0.35) !important;
+  color: var(--app-text) !important;
+}
+
+:global(.p-select-overlay.archive-settings-select-overlay .p-select-list) {
+  padding: 0.25rem !important;
+  background: var(--app-surface-raised) !important;
+}
+
+:global(.p-select-overlay.archive-settings-select-overlay .p-select-option) {
+  border-radius: 0.35rem !important;
+  color: var(--app-text) !important;
+  font-size: 0.72rem !important;
+  white-space: normal;
+}
+
+:global(.p-select-overlay.archive-settings-select-overlay .p-select-option:hover),
+:global(.p-select-overlay.archive-settings-select-overlay .p-select-option.p-focus),
+:global(.p-select-overlay.archive-settings-select-overlay .p-select-option.p-select-option-selected) {
+  background: rgba(var(--app-primary-rgb), 0.14) !important;
+  color: var(--app-primary-bright) !important;
 }
 
 .settings-page__setting-control :deep(.p-disabled),

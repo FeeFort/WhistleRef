@@ -57,8 +57,15 @@ export class ChatService {
     return this.updateLifecycle(() => this.lifecycle.updateTitle(chatId, title));
   }
   archiveChat(chatId: number) {
+    const wasActive = getChat(this.database, chatId)?.status === "active";
     const result = this.updateLifecycle(() => this.lifecycle.archiveChat(chatId));
-    if (result.changed) this.adapters.get(result.chat.platform)?.detach(this.toChatWire(result.chat));
+    if (result.changed) {
+      if (wasActive) {
+        const archiveMessage = this.recorder.recordMessage(chatId, { author: null, text: "Chat was archived", kind: "system" });
+        if (archiveMessage.inserted) this.callbacks.onMessage?.(toMessageWire(archiveMessage.message));
+      }
+      this.adapters.get(result.chat.platform)?.detach(this.toChatWire(result.chat));
+    }
     return result;
   }
   recordMessage(chatId: number, input: RecordMessageInput) {

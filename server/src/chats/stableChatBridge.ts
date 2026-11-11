@@ -53,6 +53,7 @@ export class StableChatBridge {
   private readonly now: () => string;
   private readonly gaps = new Set<string>();
   private readonly pending = new Map<string, PendingRestore>();
+  private readonly outgoingEchoes = new Map<string, number[]>();
   private previousState: ConnectionState = "disconnected";
   private shuttingDown = false;
 
@@ -110,6 +111,16 @@ export class StableChatBridge {
   }
 
   onChannelMessage(channel: string, nick: string | null, text: string, timestamp?: string): void {
+    this.pruneOutgoingEchoes();
+    if (nick && nick.toLowerCase() === this.options.irc.ownNick()?.toLowerCase()) {
+      const key = this.echoKey(channel, text);
+      const timestamps = this.outgoingEchoes.get(key);
+      if (timestamps?.length) {
+        timestamps.shift();
+        if (timestamps.length === 0) this.outgoingEchoes.delete(key);
+        return;
+      }
+    }
     this.recordIncoming(channel, nick, text, timestamp);
   }
 
@@ -119,6 +130,9 @@ export class StableChatBridge {
       this.options.logger.warn("Stable chat message could not be recorded without an IRC nickname", { channel });
       return;
     }
+    this.pruneOutgoingEchoes();
+    const key = this.echoKey(channel, text);
+    this.outgoingEchoes.set(key, [...(this.outgoingEchoes.get(key) ?? []), Date.now()]);
     this.recordIncoming(channel, nick, text);
   }
 
@@ -204,6 +218,19 @@ export class StableChatBridge {
   private normalizeKey(channel: string): string | null {
     const externalId = parseMultiplayerChannel(channel);
     return externalId === null ? null : formatMultiplayerChannel(externalId);
+  }
+
+  private echoKey(channel: string, text: string): string {
+    return `${this.normalizeKey(channel) ?? channel.toLowerCase()}\0${text}`;
+  }
+
+  private pruneOutgoingEchoes(): void {
+    const cutoff = Date.now() - 15_000;
+    for (const [key, timestamps] of this.outgoingEchoes) {
+      const fresh = timestamps.filter((timestamp) => timestamp >= cutoff);
+      if (fresh.length) this.outgoingEchoes.set(key, fresh);
+      else this.outgoingEchoes.delete(key);
+    }
   }
 
   private clearRestore(channel: string): void {

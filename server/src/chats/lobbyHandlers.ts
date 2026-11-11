@@ -29,7 +29,7 @@ export function validateMatchScores(bestOf: number | null, patch: LobbyMatch): v
 }
 
 function replyError(client: WebSocket, message: ClientMessage, error: unknown): void {
-  sendJson(client, { type: "error", requestId: message.requestId, message: (error as Error).message });
+  sendJson(client, { type: "error", request: message.type, requestId: message.requestId, message: (error as Error).message });
 }
 
 export function createLobbyHandlers(chatService: ChatService, stable: StableLobbyAdapter): Record<string, (client: WebSocket, message: ClientMessage) => void> {

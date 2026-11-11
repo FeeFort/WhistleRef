@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Bell, LayoutPanelLeft, Megaphone, MessageSquare, Music, Search, Settings2, SquareSlash, Users, X } from "@lucide/vue";
+import { Archive, Bell, LayoutPanelLeft, Megaphone, MessageSquare, Music, Search, Settings2, SquareSlash, Users, X } from "@lucide/vue";
 import serverPackage from "../../../server/package.json";
 import githubIcon from "../assets/github.svg";
 
@@ -12,6 +12,7 @@ const categories = [
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "now-playing", label: "Now Playing", icon: Music },
   { id: "lobby", label: "Lobby settings", icon: Users },
+  { id: "archive", label: "Archive", icon: Archive },
   { id: "chat", label: "Chat settings", icon: MessageSquare },
   { id: "shortcuts", label: "Shortcuts", icon: SquareSlash },
 ];

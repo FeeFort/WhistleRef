@@ -1589,13 +1589,19 @@ function handleClientMessage(client: WebSocket, rawMessage: unknown): void {
     check_update: handleCheckUpdate,
     start_update: handleStartUpdate,
     cancel_update: handleCancelUpdate,
-    chats_list: (client, message) => sendJson(client, { type: "chats_list_response", chats: chatService.listChats((message as Extract<ClientMessage, { type: "chats_list" }>).statuses) }),
+    chats_list: (client, message) => {
+      try {
+        sendJson(client, { type: "chats_list_response", chats: chatService.listChats((message as Extract<ClientMessage, { type: "chats_list" }>).statuses) });
+      } catch (error) {
+        sendJson(client, { type: "error", message: (error as Error).message });
+      }
+    },
     chat_history: (client, message) => {
       try {
         const { chatId } = message as Extract<ClientMessage, { type: "chat_history" }>;
         sendJson(client, { type: "chat_history_response", chatId, messages: chatService.getChatHistory(chatId) });
       } catch (error) {
-        sendJson(client, { type: "error", message: (error as Error).message });
+        sendJson(client, { type: "error", request: message.type, chatId: (message as Extract<ClientMessage, { type: "chat_history" }>).chatId, message: (error as Error).message });
       }
     },
     chat_archive: (client, message) => {
@@ -1604,7 +1610,7 @@ function handleClientMessage(client: WebSocket, rawMessage: unknown): void {
         chatService.archiveChat((message as Extract<ClientMessage, { type: "chat_archive" }>).chatId);
         sendJson(client, { type: "ack", received: message.type });
       } catch (error) {
-        sendJson(client, { type: "error", message: (error as Error).message });
+        sendJson(client, { type: "error", request: message.type, message: (error as Error).message });
       } finally {
         flushChatEvents();
       }
@@ -1620,7 +1626,7 @@ function handleClientMessage(client: WebSocket, rawMessage: unknown): void {
         if (skipped.length) throw new Error(`Chats were not archived and could not be deleted: ${skipped.join(", ")}`);
         sendJson(client, { type: "ack", received: message.type });
       } catch (error) {
-        sendJson(client, { type: "error", message: (error as Error).message });
+        sendJson(client, { type: "error", request: message.type, message: (error as Error).message });
       } finally {
         flushChatEvents();
       }

@@ -1,59 +1,32 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Archive, Check, ChevronDown, ChevronRight, RotateCcw, Search, Trash2, X } from "@lucide/vue";
+import { Archive, ChevronDown, RotateCcw, Search, Trash2, X } from "@lucide/vue";
 
-const props = defineProps({ visible: { type: Boolean, default: false } });
-const emit = defineEmits(["update:visible"]);
+const props = defineProps({
+  visible: { type: Boolean, default: false },
+  chats: { type: Array, default: () => [] },
+  loading: { type: Boolean, default: false },
+  busyChatIds: { type: Object, default: () => ({}) },
+  timestampFormat: { type: String, default: "relative" },
+});
+const emit = defineEmits(["update:visible", "restore-chat", "delete-chat"]);
 
 const searchQuery = ref("");
 const filterMenuOpen = ref(false);
-const multiplayerExpanded = ref(false);
-const selectedMultiplayerModes = ref(new Set(["stable", "lazer"]));
-const archiveFilter = ref("multiplayer");
+const archiveFilter = ref("all");
 const filterMenu = ref(null);
-const archivedChats = [
-  {
-    id: "stable-owc-qualifiers",
-    title: "OWC Qualifiers",
-    type: "multiplayer",
-    platform: "Stable",
-    messageCount: 326,
-    archivedAt: "12 Oct 2026",
-  },
-  {
-    id: "lazer-weekend-practice",
-    title: "Weekend practice",
-    type: "multiplayer",
-    platform: "Lazer",
-    messageCount: 91,
-    archivedAt: "3 days ago",
-  },
-  {
-    id: "dm-miyu",
-    title: "Miyu",
-    type: "dm",
-    platform: null,
-    messageCount: 84,
-    archivedAt: "Yesterday",
-  },
-];
 
 const filteredChats = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
-  return archivedChats.filter((chat) => {
-    const matchesFilter = archiveFilter.value === "dm" ? chat.type === "dm" : chat.type === "multiplayer" && selectedMultiplayerModes.value.has(chat.platform?.toLowerCase());
-    const matchesSearch = !query || `${chat.title} ${chat.platform || "DM"}`.toLowerCase().includes(query);
-    return matchesFilter && matchesSearch;
-  });
+  return [...props.chats]
+    .filter((chat) => archiveFilter.value === "all" || chat.platform === archiveFilter.value)
+    .filter((chat) => !query || `${chat.title} ${chat.platform} ${chat.externalId}`.toLowerCase().includes(query))
+    .sort((left, right) => String(right.archivedAt || "").localeCompare(String(left.archivedAt || "")));
 });
 
-const resultsKey = computed(() => `${archiveFilter.value}:${searchQuery.value}:${[...selectedMultiplayerModes.value].sort().join(",")}`);
+const resultsKey = computed(() => `${archiveFilter.value}:${searchQuery.value}`);
 
-const filterLabel = computed(() => {
-  if (archiveFilter.value === "dm") return "DM";
-  if (selectedMultiplayerModes.value.size === 1) return [...selectedMultiplayerModes.value][0] === "stable" ? "Stable" : "Lazer";
-  return "Multiplayer";
-});
+const filterLabel = computed(() => ({ all: "All", stable: "Stable", lazer: "Lazer" })[archiveFilter.value] || "All");
 
 function close() {
   resetView();
@@ -62,9 +35,7 @@ function close() {
 
 function resetView() {
   searchQuery.value = "";
-  archiveFilter.value = "multiplayer";
-  selectedMultiplayerModes.value = new Set(["stable", "lazer"]);
-  multiplayerExpanded.value = false;
+  archiveFilter.value = "all";
   filterMenuOpen.value = false;
 }
 
@@ -72,26 +43,55 @@ function toggleFilterMenu() {
   filterMenuOpen.value = !filterMenuOpen.value;
 }
 
-function selectDm() {
-  archiveFilter.value = "dm";
+function selectFilter(filter) {
+  archiveFilter.value = filter;
   filterMenuOpen.value = false;
 }
 
-function selectMultiplayer() {
-  archiveFilter.value = "multiplayer";
-  filterMenuOpen.value = false;
+function restoreChat(chat) {
+  emit("restore-chat", chat);
+  close();
 }
 
-function toggleMultiplayerMode(mode) {
-  const next = new Set(selectedMultiplayerModes.value);
-  if (next.has(mode)) {
-    if (next.size === 1) return;
-    next.delete(mode);
-  } else {
-    next.add(mode);
+function formatArchivedAt(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Archived date unavailable";
+
+  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
+  const pad = (number) => String(number).padStart(2, "0");
+  const day = date.getDate();
+  const month = date.getMonth() + 1;
+  const year = date.getFullYear();
+  let formattedDate;
+  if (props.timestampFormat === "relative") {
+    const today = new Date();
+    const dateKey = (item) => Date.UTC(item.getFullYear(), item.getMonth(), item.getDate());
+    const dayDifference = Math.floor((dateKey(today) - dateKey(date)) / 86400000);
+    if (dayDifference === 0) return `Archived today at ${time}`;
+    if (dayDifference === 1) return `Archived yesterday at ${time}`;
+    if (dayDifference > 1) return `Archived ${dayDifference} days ago at ${time}`;
+    formattedDate = `${pad(month)}/${pad(day)}/${year}`;
+  } else if (props.timestampFormat === "DD.MM.YYYY") formattedDate = `${pad(day)}.${pad(month)}.${year}`;
+  else if (props.timestampFormat === "DD/MM/YYYY") formattedDate = `${pad(day)}/${pad(month)}/${year}`;
+  else if (props.timestampFormat === "DD-MM-YYYY") formattedDate = `${pad(day)}-${pad(month)}-${year}`;
+  else if (props.timestampFormat === "MM/DD/YYYY") formattedDate = `${pad(month)}/${pad(day)}/${year}`;
+  else if (props.timestampFormat === "MM-DD-YYYY") formattedDate = `${pad(month)}-${pad(day)}-${year}`;
+  else if (props.timestampFormat === "YYYY-MM-DD") formattedDate = `${year}-${pad(month)}-${pad(day)}`;
+  else if (props.timestampFormat === "YYYY/MM/DD") formattedDate = `${year}/${pad(month)}/${pad(day)}`;
+  else if (props.timestampFormat === "YYYY.MM.DD") formattedDate = `${year}.${pad(month)}.${pad(day)}`;
+  else if (props.timestampFormat === "DD.MM.YY") formattedDate = `${pad(day)}.${pad(month)}.${String(year).slice(-2)}`;
+  else if (props.timestampFormat === "MM/DD/YY") formattedDate = `${pad(month)}/${pad(day)}/${String(year).slice(-2)}`;
+  else {
+    const monthStyle = props.timestampFormat.includes("MMMM") ? "long" : "short";
+    const monthName = new Intl.DateTimeFormat(undefined, { month: monthStyle }).format(date);
+    if (props.timestampFormat === "D MMM YYYY" || props.timestampFormat === "D MMMM YYYY") formattedDate = `${day} ${monthName} ${year}`;
+    else if (props.timestampFormat === "MMM D, YYYY" || props.timestampFormat === "MMMM D, YYYY") formattedDate = `${monthName} ${day}, ${year}`;
+    else if (props.timestampFormat === "ddd, D MMM YYYY") {
+      const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(date);
+      formattedDate = `${weekday}, ${day} ${monthName} ${year}`;
+    } else formattedDate = `${pad(month)}/${pad(day)}/${year}`;
   }
-  selectedMultiplayerModes.value = next;
-  archiveFilter.value = "multiplayer";
+  return `Archived ${formattedDate} at ${time}`;
 }
 
 function closeFilterMenuOnOutsideClick(event) {
@@ -147,41 +147,17 @@ onBeforeUnmount(() => {
               </button>
               <Transition name="archive-filter-menu">
                 <div v-if="filterMenuOpen" class="archive-modal__filter-overlay" role="listbox" aria-label="Archived chat filters" @click.stop>
-                  <div class="archive-modal__filter-group" :class="{ 'archive-modal__filter-group--selected': archiveFilter === 'multiplayer' }">
-                    <button
-                      type="button"
-                      class="archive-modal__filter-expand"
-                      :aria-expanded="multiplayerExpanded"
-                      aria-label="Expand multiplayer filters"
-                      @click="multiplayerExpanded = !multiplayerExpanded"
-                    >
-                      <ChevronDown v-if="multiplayerExpanded" :size="14" />
-                      <ChevronRight v-else :size="14" />
-                    </button>
-                    <button type="button" class="archive-modal__filter-select" @click="selectMultiplayer">Multiplayer</button>
-                  </div>
-                  <Transition name="archive-filter-children">
-                    <div v-if="multiplayerExpanded" class="archive-modal__filter-children">
-                      <button
-                        v-for="mode in ['stable', 'lazer']"
-                        :key="mode"
-                        type="button"
-                        class="archive-modal__filter-check"
-                        :class="{ 'archive-modal__filter-check--selected': selectedMultiplayerModes.has(mode) }"
-                        @click="toggleMultiplayerMode(mode)"
-                      >
-                        <span>{{ mode === "stable" ? "Stable" : "Lazer" }}</span>
-                        <span class="archive-modal__checkbox"><Check v-if="selectedMultiplayerModes.has(mode)" :size="12" /></span>
-                      </button>
-                    </div>
-                  </Transition>
                   <button
+                    v-for="filter in [{ value: 'all', label: 'All' }, { value: 'stable', label: 'Stable' }, { value: 'lazer', label: 'Lazer' }]"
+                    :key="filter.value"
                     type="button"
-                    class="archive-modal__filter-group archive-modal__filter-group--dm"
-                    :class="{ 'archive-modal__filter-group--selected': archiveFilter === 'dm' }"
-                    @click="selectDm"
+                    class="archive-modal__filter-option"
+                    :class="{ 'archive-modal__filter-option--selected': archiveFilter === filter.value }"
+                    role="option"
+                    :aria-selected="archiveFilter === filter.value"
+                    @click="selectFilter(filter.value)"
                   >
-                    <span>DM</span>
+                    {{ filter.label }}
                   </button>
                 </div>
               </Transition>
@@ -194,28 +170,27 @@ onBeforeUnmount(() => {
                   <div class="archive-chat-card__info">
                     <h2>{{ chat.title }}</h2>
                     <p>
-                      <span>{{ chat.type === "dm" ? "DM" : `${chat.platform} multiplayer` }}</span>
+                      <span>{{ chat.platform === "stable" ? "Stable" : "Lazer" }}</span>
                       <span aria-hidden="true">·</span>
-                      <span>{{ chat.messageCount }} messages</span>
+                      <span>{{ chat.messageCount }} {{ chat.messageCount === 1 ? "message" : "messages" }}</span>
                       <span aria-hidden="true">·</span>
-                      <span>Archived {{ chat.archivedAt }}</span>
+                      <span>{{ formatArchivedAt(chat.archivedAt) }}</span>
                     </p>
                   </div>
                   <div class="archive-chat-card__actions">
-                    <button type="button" class="archive-chat-card__action" aria-label="Restore chat">
+                    <button type="button" class="archive-chat-card__action" :aria-label="`Restore ${chat.title} as read-only`" :disabled="Boolean(busyChatIds[chat.id])" @click="restoreChat(chat)">
                       <RotateCcw :size="14" />
                       <span>Restore</span>
                     </button>
-                    <button type="button" class="archive-chat-card__action archive-chat-card__action--danger" aria-label="Delete chat">
+                    <button type="button" class="archive-chat-card__action archive-chat-card__action--danger" :aria-label="`Delete ${chat.title}`" :disabled="Boolean(busyChatIds[chat.id])" @click="emit('delete-chat', chat)">
                       <Trash2 :size="14" />
                       <span>Delete</span>
                     </button>
                   </div>
                 </article>
               </div>
-            </Transition>
-            <Transition name="archive-content" mode="out-in">
-              <div v-if="!filteredChats.length" :key="searchQuery.trim() ? 'no-results' : 'no-archive'" class="archive-modal__empty" role="status">
+              <div v-else-if="loading" key="loading" class="archive-modal__empty" role="status">Loading archived chats...</div>
+              <div v-else key="empty" class="archive-modal__empty" role="status">
                 {{ searchQuery.trim() ? "No chats found" : "No archived chats" }}
               </div>
             </Transition>
@@ -372,10 +347,6 @@ onBeforeUnmount(() => {
   border-color: rgba(var(--app-primary-rgb), 0.6) !important;
   box-shadow: 0 0 0 1px rgba(var(--app-primary-rgb), 0.18) !important;
 }
-.archive-modal__filter-option--nested {
-  display: inline-block;
-  padding-left: 0.7rem;
-}
 .archive-modal__filter-wrap {
   position: relative;
   width: 9rem;
@@ -394,93 +365,28 @@ onBeforeUnmount(() => {
   box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.28) !important;
   color: var(--app-text) !important;
 }
-.archive-modal__filter-group,
-.archive-modal__filter-check {
+.archive-modal__filter-option {
   display: flex;
   align-items: center;
   width: 100%;
   min-height: 2.1rem;
-  gap: 0.45rem;
   padding: 0.45rem 0.55rem;
   border: 0;
   border-radius: 0.45rem;
   background: transparent;
-  color: var(--app-text);
+  color: var(--app-muted);
   font: inherit;
   font-size: 0.78rem;
   text-align: left;
   cursor: pointer;
 }
-.archive-modal__filter-group {
-  padding: 0 0.35rem;
-  overflow: hidden;
-}
-.archive-modal__filter-expand,
-.archive-modal__filter-select {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-.archive-modal__filter-expand {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.45rem;
-  min-height: 2.1rem;
-  flex: 0 0 1.45rem;
-}
-.archive-modal__filter-select {
-  width: calc(100% - 1.45rem);
-  padding: 0.45rem 0.05rem;
-  text-align: left;
-}
-.archive-modal__filter-group:hover,
-.archive-modal__filter-check:hover {
-  background: rgba(var(--app-primary-rgb), 0.14) !important;
-}
-.archive-modal__filter-group--selected {
-  color: var(--app-primary-bright);
-}
-.archive-modal__filter-children {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.15rem 0 0.2rem 0.75rem;
-}
-.archive-modal__filter-group--dm {
-  margin-top: 0.1rem;
-  padding: 0.45rem 0.55rem;
-}
-.archive-modal__filter-check {
-  position: relative;
-  border: 1px solid transparent;
-  color: var(--app-muted);
-}
-.archive-modal__filter-check:hover,
-.archive-modal__filter-check--selected {
-  border-color: rgba(var(--app-primary-rgb), 0.18);
+.archive-modal__filter-option:hover,
+.archive-modal__filter-option--selected {
   color: var(--app-text);
+  background: rgba(var(--app-primary-rgb), 0.12);
 }
-.archive-modal__filter-check:hover {
-  background: rgba(var(--app-primary-rgb), 0.09);
-}
-.archive-modal__checkbox {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1rem;
-  height: 1rem;
-  flex: 0 0 1rem;
-  margin-left: auto;
-  border: 1px solid var(--app-border-strong);
-  border-radius: 50%;
-  color: var(--app-primary-bright);
-}
-.archive-modal__filter-check--selected .archive-modal__checkbox {
-  border-color: var(--app-primary-bright);
-  background: rgba(var(--app-primary-rgb), 0.2);
+.archive-modal__filter-option--selected {
+  font-weight: 650;
 }
 .archive-filter-menu-enter-active,
 .archive-filter-menu-leave-active {
@@ -494,19 +400,6 @@ onBeforeUnmount(() => {
   transform: translateY(-0.3rem) scale(0.98);
   opacity: 0;
 }
-.archive-filter-children-enter-active,
-.archive-filter-children-leave-active {
-  max-height: 6rem;
-  overflow: hidden;
-  transition:
-    max-height 0.2s ease,
-    opacity 0.16s ease;
-}
-.archive-filter-children-enter-from,
-.archive-filter-children-leave-to {
-  max-height: 0;
-  opacity: 0;
-}
 .archive-chat-list-enter-active,
 .archive-chat-list-leave-active {
   transition:
@@ -516,14 +409,6 @@ onBeforeUnmount(() => {
 .archive-chat-list-enter-from,
 .archive-chat-list-leave-to {
   transform: translateY(0.35rem);
-  opacity: 0;
-}
-.archive-content-enter-active,
-.archive-content-leave-active {
-  transition: opacity 0.18s ease;
-}
-.archive-content-enter-from,
-.archive-content-leave-to {
   opacity: 0;
 }
 .archive-modal__list {
@@ -597,6 +482,10 @@ onBeforeUnmount(() => {
   border-color: rgba(var(--app-primary-rgb), 0.22);
   background: rgba(var(--app-primary-rgb), 0.12);
   color: var(--app-primary-bright);
+}
+.archive-chat-card__action:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 .archive-chat-card__action--danger:hover {
   border-color: rgba(255, 107, 126, 0.25);

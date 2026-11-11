@@ -53,8 +53,17 @@ function initials(name) {
 }
 
 function requestCloseChat(chat) {
+  if (chat?.archivedChatId) {
+    emit("close-chat", chat.id);
+    return;
+  }
   pendingCloseChat.value = chat;
   closeConfirmationVisible.value = true;
+}
+
+function chatActionLabel(chat) {
+  if (chat?.archivedChatId) return "Close";
+  return chat?.source === "dm" ? "Close" : "Archive";
 }
 
 function confirmCloseChat() {
@@ -124,7 +133,7 @@ const profileMenuItems = computed(() => [
                       <span class="app-sidebar__chat-label">{{ chat.label }}</span>
                       <span v-if="unreadChats[chat.id]" class="app-sidebar__chat-unread" role="status" aria-label="New messages" />
                     </SidebarMenuButton>
-                    <button v-tooltip.top="'Close chat'" type="button" class="app-sidebar__chat-close" :aria-label="`Close ${chat.label} chat`" @click.stop="requestCloseChat(chat)">
+                    <button v-tooltip.top="`${chatActionLabel(chat)} chat`" type="button" class="app-sidebar__chat-close" :aria-label="`${chatActionLabel(chat)} ${chat.label} chat`" @click.stop="requestCloseChat(chat)">
                       <X :size="11" />
                     </button>
                   </SidebarMenuItem>
@@ -145,10 +154,10 @@ const profileMenuItems = computed(() => [
                       <span v-if="unreadChats[channel.id]" class="app-sidebar__chat-unread" role="status" aria-label="New messages" />
                     </SidebarMenuButton>
                     <button
-                      v-tooltip.top="'Close chat'"
+                      v-tooltip.top="`${chatActionLabel(channel)} chat`"
                       type="button"
                       class="app-sidebar__chat-close"
-                      :aria-label="`Close ${channel.lobby?.name || channel.label} chat`"
+                      :aria-label="`${chatActionLabel(channel)} ${channel.lobby?.name || channel.label} chat`"
                       @click.stop="requestCloseChat(channel)"
                     >
                       <X :size="11" />
@@ -170,7 +179,7 @@ const profileMenuItems = computed(() => [
                       </span>
                       <span v-if="unreadChats[room.id]" class="app-sidebar__chat-unread" role="status" aria-label="New messages" />
                     </SidebarMenuButton>
-                    <button v-tooltip.top="'Close chat'" type="button" class="app-sidebar__chat-close" :aria-label="`Close ${room.label} chat`" @click.stop="requestCloseChat(room)">
+                    <button v-tooltip.top="`${chatActionLabel(room)} chat`" type="button" class="app-sidebar__chat-close" :aria-label="`${chatActionLabel(room)} ${room.label} chat`" @click.stop="requestCloseChat(room)">
                       <X :size="11" />
                     </button>
                   </SidebarMenuItem>
@@ -221,14 +230,14 @@ const profileMenuItems = computed(() => [
           <AlertTriangle :size="20" class="command-confirm-message__icon" />
         </template>
         <div class="command-confirm-message__content">
-          <strong>Close this chat?</strong>
-          <span> Are you sure you want to close “{{ pendingCloseChat?.label }}”? </span>
+          <strong>{{ chatActionLabel(pendingCloseChat) }} this chat?</strong>
+          <span> Are you sure you want to {{ chatActionLabel(pendingCloseChat).toLowerCase() }} “{{ pendingCloseChat?.label }}”? </span>
         </div>
       </Message>
 
       <template #footer>
         <Button label="Cancel" text severity="secondary" @click="cancelCloseChat" />
-        <Button label="Close" @click="confirmCloseChat" />
+        <Button :label="chatActionLabel(pendingCloseChat)" @click="confirmCloseChat" />
       </template>
     </Dialog>
 
