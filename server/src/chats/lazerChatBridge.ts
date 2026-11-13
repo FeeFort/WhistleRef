@@ -96,14 +96,14 @@ export class LazerChatBridge {
     const chat = this.findChat(roomId);
     if (!chat) return;
     const result = this.options.chatService.markRoomClosed(chat.id);
-    if (result.changed) this.record(chat.id, { kind: "system", author: null, text: LAZER_CHAT_TEXT.roomClosed });
+    if (result.changed) this.record(chat.id, { kind: "whistlebot", author: "WhistleBot", text: LAZER_CHAT_TEXT.roomClosed });
   }
   reconcile(liveRoomIds: number[]): void {
     const live = new Set(liveRoomIds);
     for (const chat of this.options.chatService.listChats(["active"]).filter((item) => item.platform === "lazer")) {
       if (live.has(chat.externalId)) continue;
       const result = this.options.chatService.markRoomClosed(chat.id);
-      if (result.changed) this.record(chat.id, { kind: "system", author: null, text: LAZER_CHAT_TEXT.roomClosed });
+      if (result.changed) this.record(chat.id, { kind: "whistlebot", author: "WhistleBot", text: LAZER_CHAT_TEXT.roomClosed });
     }
   }
   onLiveMessage(roomId: number, message: Record<string, unknown>, users: unknown[] = []): void {
@@ -141,7 +141,9 @@ export class LazerChatBridge {
   async recordEvent(roomId: number, text: string): Promise<void> {
     try {
       const chat = this.findChat(roomId);
-      if (chat && chat.status !== "archived") this.options.chatService.recordEvent(chat.id, text);
+      if (chat && chat.status !== "archived") {
+        this.record(chat.id, { kind: "whistlebot", author: "WhistleBot", text });
+      }
     } catch (error) {
       this.options.logger.warn("Lazer chat event could not be recorded", { roomId, error });
     }

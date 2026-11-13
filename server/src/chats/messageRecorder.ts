@@ -33,7 +33,7 @@ export class MessageRecorder {
   }
 
   recordEvent(chatId: number, text: string): RecordMessageResult {
-    return this.recordMessage(chatId, { author: null, text, kind: "event" });
+    return this.recordMessage(chatId, { author: "WhistleBot", text, kind: "whistlebot" });
   }
 
   recordMessages(chatId: number, inputs: readonly RecordMessageInput[]): number {

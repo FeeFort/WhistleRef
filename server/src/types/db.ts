@@ -26,7 +26,7 @@ export interface CreateChat {
   created_at: string;
 }
 
-export type MessageKind = "message" | "action" | "system" | "roll" | "service" | "event";
+export type MessageKind = "message" | "action" | "system" | "roll" | "whistlebot";
 
 export interface Message {
   id: number;

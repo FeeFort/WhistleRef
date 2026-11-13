@@ -185,10 +185,25 @@ export async function handleLazerChangeRoomSettings(client: WebSocket, message: 
       max_participants: m.max_participants,
     });
     await ack(client, message);
-    void getLazerChatBridge()?.recordAction(m.room_id, () => LAZER_CHAT_TEXT.settingsChanged);
+    void getLazerChatBridge()?.recordAction(m.room_id, () => formatChangedRoomSettings(m));
   } catch (error) {
     await fail(client, message, error);
   }
+}
+
+function formatChangedRoomSettings(message: Extract<ClientMessage, { type: "lazer_change_room_settings" }>): string {
+  const { name, match_type: matchType, max_participants: size } = message;
+  if (name !== undefined && name !== null && matchType === undefined && size === undefined) {
+    return `Room name updated to "${name}"`;
+  }
+  if (matchType !== undefined && matchType !== null && size !== undefined && size !== null) {
+    const label = matchType === "head_to_head" ? "HeadToHead" : "TeamVs";
+    return `Changed match settings to ${size || "Infinite"} slots, ${label}`;
+  }
+  if (size !== undefined && size !== null && matchType === undefined) {
+    return `Changed match to size ${size || "Infinite"}`;
+  }
+  return LAZER_CHAT_TEXT.settingsChanged;
 }
 
 export async function handleLazerEditCurrentPlaylistItem(client: WebSocket, message: ClientMessage): Promise<void> {

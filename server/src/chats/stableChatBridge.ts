@@ -2,8 +2,7 @@ import type { ConnectionState, ChatWire, LobbyState } from "../types/index.js";
 import type { ChatService } from "./chatService.js";
 
 export const STABLE_CHAT_SERVICE_TEXT = {
-  rejoined: "Rejoined the channel. Messages sent while you were away may be missing.",
-  connectionLost: "Connection to the chat was lost. Messages may be missing from this point.",
+  connectionLost: "Connection to the chat was lost. Messages sent while you were away may be missing.",
 } as const;
 
 export const STABLE_CHAT_SYSTEM_TEXT = {
@@ -90,12 +89,9 @@ export class StableChatBridge {
     const externalId = parseMultiplayerChannel(channel);
     if (externalId === null) return;
     const key = formatMultiplayerChannel(externalId);
-    const existing = this.findChat(externalId);
-    const result = this.options.chatService.openOrCreateChat({ platform: "stable", externalId, title: titleHint?.trim() || key });
-    const shouldMarkGap = existing?.status === "archived" || this.gaps.has(key);
+    this.options.chatService.openOrCreateChat({ platform: "stable", externalId, title: titleHint?.trim() || key });
     this.clearRestore(key);
     this.gaps.delete(key);
-    if (shouldMarkGap) this.record(result.chat.id, "service", STABLE_CHAT_SERVICE_TEXT.rejoined);
   }
 
   onOwnPart(channel: string): void {
@@ -148,7 +144,7 @@ export class StableChatBridge {
       for (const chat of this.options.chatService.listChats(["active"]).filter((item) => item.platform === "stable")) {
         const key = formatMultiplayerChannel(chat.externalId);
         if (this.gaps.has(key)) continue;
-        this.record(chat.id, "service", STABLE_CHAT_SERVICE_TEXT.connectionLost);
+        this.record(chat.id, "system", STABLE_CHAT_SERVICE_TEXT.connectionLost);
         this.gaps.add(key);
       }
     }
@@ -207,7 +203,7 @@ export class StableChatBridge {
     this.record(chat.id, "message", text, nick, timestamp);
   }
 
-  private record(chatId: number, kind: "message" | "system" | "service", text: string, author: string | null = null, createdAt?: string): void {
+  private record(chatId: number, kind: "message" | "system", text: string, author: string | null = null, createdAt?: string): void {
     this.options.chatService.recordMessage(chatId, { kind, text, author, ...(createdAt ? { createdAt } : { createdAt: this.now() }) });
   }
 
