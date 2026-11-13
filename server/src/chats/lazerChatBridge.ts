@@ -136,7 +136,7 @@ export class LazerChatBridge {
     const chat = this.findChat(payload.room_id);
     if (!chat || chat.status === "archived") return;
     const name = await this.options.resolveName(payload.user_id);
-    this.record(chat.id, { kind: "roll", author: null, text: LAZER_CHAT_TEXT.roll(name, payload.result, payload.max) });
+    this.record(chat.id, { kind: "roll", author: "system", text: LAZER_CHAT_TEXT.roll(name, payload.result, payload.max) });
   }
   async recordEvent(roomId: number, text: string): Promise<void> {
     try {
