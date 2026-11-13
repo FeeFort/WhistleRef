@@ -21,6 +21,7 @@ import { addClient, removeClient, sendJson, broadcast, clientCount, requestConte
 import { connectToRefereeHub, disconnectFromRefereeHub } from "./lazer/refereeHubClient.js";
 import { roomManager } from "./lazer/roomManager.js";
 import * as lazerHandlers from "./lazer/handlers.js";
+import { handleLazerMpCommand } from "./lazer/mpCommandHandler.js";
 import type { LazerConnectionStateEvent, LazerSyncStateEvent, LazerRoomsEvent } from "./types/index.js";
 import { ChatSocket } from "./lazer/chatSocket.js";
 import { openDatabase } from "./db/database.js";
@@ -1207,6 +1208,14 @@ function validateMessage(message: unknown): string | null {
       if (!isNonEmptyString(message.slotId) || typeof message.source !== "string" || !isRecord(message.sampleContext)) return "slotId, source and sampleContext are required.";
       return null;
     },
+    lazer_mp_command: () => {
+      const roomError = validateLazerRoomId(message);
+      if (roomError) return roomError;
+      if (!isNonEmptyString(message.command) || message.command.length > 2000 || !/^!mp\s+/i.test(message.command.trim())) {
+        return "command must be a !mp command of at most 2000 characters.";
+      }
+      return null;
+    },
     lazer_make_room: () => {
       if (!Number.isSafeInteger(message.ruleset_id) || (message.ruleset_id as number) < 0 || (message.ruleset_id as number) > 3) return "ruleset_id must be an integer from 0 to 3.";
       if (!Number.isSafeInteger(message.beatmap_id) || (message.beatmap_id as number) <= 0) return "beatmap_id must be a positive integer.";
@@ -1644,6 +1653,7 @@ function handleClientMessage(client: WebSocket, rawMessage: unknown): void {
     ...createLobbyHandlers(chatService, banchoConnection),
     confirm_install: handleConfirmInstall,
     test_win_condition: handleTestWinCondition,
+    lazer_mp_command: handleLazerMpCommand,
     lazer_make_room: lazerHandlers.handleLazerMakeRoom,
     // TODO(client-migration): Remove this registry entry once the backend backfills chat history itself.
     lazer_load_chat: lazerHandlers.handleLazerLoadChat,

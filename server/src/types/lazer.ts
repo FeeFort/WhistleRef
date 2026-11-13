@@ -33,6 +33,25 @@ export interface LazerMod {
   settings?: Record<string, unknown>;
 }
 
+export interface ResolvedLazerUser {
+  userId: number;
+  username: string;
+}
+
+export interface LazerModDefinition {
+  Acronym: string;
+  Name?: string;
+  IncompatibleMods?: string[];
+  ValidForMultiplayer?: boolean;
+  ValidForMultiplayerAsFreeMod?: boolean;
+  [key: string]: unknown;
+}
+
+export interface LazerRulesetMods {
+  RulesetID?: number;
+  Mods?: LazerModDefinition[];
+}
+
 // ---- Requests ----
 
 export interface MakeRoomRequest {
@@ -130,6 +149,7 @@ export interface LazerMatchState {
   type: MatchType;
   locked: boolean;
   slots: (number | null)[] | null;
+  playlist_item_id?: number;
 }
 
 export interface RoomJoinedResponse {
@@ -139,6 +159,9 @@ export interface RoomJoinedResponse {
   password: string;
   max_participants: number;
   queue_mode: QueueMode;
+  current_playlist_item_id?: number;
+  playlist_item_id?: number;
+  ruleset_id?: number;
   state: LazerMatchState;
   playlist: LazerPlaylistItem[];
   players: LazerPlayer[];

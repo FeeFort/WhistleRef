@@ -8,3 +8,16 @@ export interface RequestFailure {
   retryAfterMs?: number;
   outcomeUnknown: boolean;
 }
+
+export interface OsuApiUserLookupResponse {
+  id?: number;
+  username?: string;
+}
+
+export interface OsuApiBeatmapLookupResponse {
+  id?: number;
+  artist?: string;
+  title?: string;
+  mode_int?: number;
+  ruleset_id?: number;
+}

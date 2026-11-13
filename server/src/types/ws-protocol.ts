@@ -67,6 +67,7 @@ export type ClientCommand =
   | { type: "lobby_state_import"; lobbies: unknown[] }
   | { type: "confirm_install" }
   | { type: "test_win_condition"; slotId: string; source: string; sampleContext: Record<string, unknown> }
+  | { type: "lazer_mp_command"; room_id: number; command: string }
   | {
       type: "lazer_make_room";
       ruleset_id: number;
