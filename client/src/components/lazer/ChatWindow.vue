@@ -1062,6 +1062,9 @@ function forwardCommand(command) {
 }
 
 .chat-line__mappool-link--status {
+  display: inline;
+  vertical-align: baseline;
+  transform: none;
   color: var(--app-muted);
   font-style: italic;
   font-weight: 600;

@@ -1645,19 +1645,14 @@ function normalizeServerChatMessage(message) {
   if (!message || !Number.isSafeInteger(Number(message.id))) return null;
   const kind = String(message.kind || "message");
   let author = message.author || "";
-  let text = String(message.text || "");
+  const text = String(message.text || "");
+  const isWhistleBot = kind === "whistlebot" || kind === "event";
   const isRoll = kind === "roll";
-  if (isRoll) {
-    const roll = text.match(/^(.+?) rolled (.+)$/);
-    if (roll) {
-      author = roll[1];
-      text = roll[2];
-    }
-  }
+  if (isWhistleBot && !author) author = "WhistleBot";
   return {
     id: `server:${message.id}`,
     serverMessageId: Number(message.id),
-    type: ["system", "service", "event", "roll"].includes(kind) ? "system" : undefined,
+    type: ["system", "roll"].includes(kind) ? "system" : undefined,
     author: author || "Unknown",
     text,
     time: message.createdAt || new Date().toISOString(),
