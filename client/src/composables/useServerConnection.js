@@ -34,10 +34,8 @@ function send(socketInstance, payload) {
   return true;
 }
 
-// Used by local command adapters which need to correlate a particular
-// websocket acknowledgement with the request that caused it.
-function sendLazerCommand(type, payload = {}, requestId) {
-  return socket.value ? send(socket.value, { type, ...payload, ...(requestId ? { requestId } : {}) }) : false;
+function sendLazerMpCommand(room_id, command) {
+  return socket.value ? send(socket.value, { type: "lazer_mp_command", room_id, command }) : false;
 }
 
 function sendMessage(channel, message) {
@@ -580,7 +578,7 @@ export function useServerConnection() {
     lazerInvitePlayer: inviteLazerPlayer,
     sendLazerChatMessage,
     rollLazer,
-    sendLazerCommand,
+    sendLazerMpCommand,
     checkUpdate: requestUpdateCheck,
     startUpdate: () => sendUpdateCommand("start_update"),
     cancelUpdate: () => sendUpdateCommand("cancel_update"),
