@@ -129,10 +129,6 @@ function joinLazerRoom(room_id) {
   return socket.value ? send(socket.value, { type: "lazer_join_room", room_id }) : false;
 }
 
-function leaveLazerRoom(room_id) {
-  return socket.value ? send(socket.value, { type: "lazer_leave_room", room_id }) : false;
-}
-
 function closeLazerRoom(room_id) {
   return socket.value ? send(socket.value, { type: "lazer_close_room", room_id }) : false;
 }
@@ -311,28 +307,6 @@ async function requestApi(endpoint, method = "GET", body = undefined) {
     }
   }
   throw new Error("API request failed.");
-}
-
-function setLobbyScore(channel, teamRedScore, teamBlueScore) {
-  return socket.value
-    ? send(socket.value, {
-        type: "set_lobby_score",
-        channel,
-        teamRedScore,
-        teamBlueScore,
-      })
-    : false;
-}
-
-function setLobbySettings(channel, bestOf, nextPickTeam) {
-  return socket.value
-    ? send(socket.value, {
-        type: "set_lobby_settings",
-        channel,
-        bestOf,
-        nextPickTeam,
-      })
-    : false;
 }
 
 function refreshLobbyTitle(channel) {
@@ -553,14 +527,11 @@ export function useServerConnection() {
     setLobbyQualificationMode,
     archiveChat,
     deleteChats,
-    setLobbyScore,
-    setLobbySettings,
     refreshLobbyTitle,
     setActiveWinCondition,
     testWinCondition,
     makeLazerRoom,
     joinLazerRoom,
-    leaveLazerRoom,
     closeLazerRoom,
     startLazerMatch,
     abortLazerMatch,

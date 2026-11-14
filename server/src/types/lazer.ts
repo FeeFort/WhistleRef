@@ -347,18 +347,6 @@ export interface LazerRoomErrorEvent {
 export type LazerStatusEvent = LazerConnectionStateEvent | LazerSyncStateEvent | LazerRoomErrorEvent;
 export type LazerStatusHandler = (event: LazerStatusEvent) => void;
 
-// TODO(client-migration): Remove this old chat state event once the backend backfills history itself.
-export type LazerChatStateEvent = {
-  type: "lazer_chat_state";
-  roomId: number;
-  requestId?: string;
-} & ({ state: "loading" | "ready" } | { state: "failed"; stage: "channel" | "history"; message: string; code?: string });
-
-export interface PendingChatLoad {
-  cancelled: boolean;
-  promise: Promise<ChatMessage[]>;
-}
-
 export interface LazerRoomsEvent {
   type: "lazer_rooms";
   roomIds: number[];
