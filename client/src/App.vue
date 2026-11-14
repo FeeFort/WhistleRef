@@ -56,6 +56,7 @@ import { formatLobbyTemplate, useLobbyMessages } from "./composables/useLobbyMes
 import { applyServerLobbyState, configureLobbyStateSync, sortMappoolSlots, useMappool } from "./composables/useMappool";
 import { advanceMappoolChatContext, createMappoolChatContext } from "./composables/useMappoolChat";
 import { useNowPlayingSettings } from "./composables/useNowPlayingSettings";
+import { useShortcuts } from "./composables/useShortcuts";
 import { NOTIFICATION_SOUNDS, NOTIFICATION_TRIGGER_OPTIONS, getNotificationSoundUrl, useNotifications } from "./composables/useNotifications";
 
 const commandScrollToken = ref(0);
@@ -203,6 +204,7 @@ const toast = useToast();
 const loginToastGroup = "irc-login";
 const launchedAfterUpdate = new URLSearchParams(window.location.search).has("updated");
 const { activePreset } = useLobbyMessages();
+const { timerSeconds } = useShortcuts();
 const { getActivePool, getMapState, setMapState, getQualificationMode, setQualificationMode } = useMappool();
 const {
   getActivePool: getLazerActivePool,
@@ -3289,6 +3291,23 @@ function handleSend(text) {
     const command = text.trim();
     if (/^\/savelog$/i.test(command)) {
       downloadChatHistory();
+      return;
+    }
+
+    const timerCommand = command.match(/^!mp\s+(timer|aborttimer)\b(?:\s+([\s\S]*))?$/i);
+    if (timerCommand) {
+      const roomId = Number(activeLazerRoom.value?.room_id);
+      if (!Number.isInteger(roomId) || roomId <= 0 || activeLazerRoom.value?.closed) return;
+
+      if (timerCommand[1].toLowerCase() === "aborttimer") {
+        if (!timerCommand[2]?.trim()) abortActiveLazerTimer(roomId);
+        else sendLazerMpCommand(roomId, text);
+        return;
+      }
+
+      const duration = timerCommand[2]?.trim() ? Number(timerCommand[2].trim()) : Number(timerSeconds.value);
+      if (Number.isSafeInteger(duration) && duration >= 1) startLazerCountdown(roomId, duration);
+      else toast.add({ severity: "error", summary: "Timer failed", detail: "Enter a positive whole number of seconds.", life: 4000 });
       return;
     }
 

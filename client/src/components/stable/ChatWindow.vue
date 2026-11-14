@@ -11,6 +11,7 @@ import CommandBar from "./CommandBar.vue";
 import { useDarkMode } from "../../composables/useDarkMode";
 import NowPlaying from "./NowPlaying.vue";
 import { parseMappoolMessage } from "../../composables/useMappoolChat";
+import { parseInlineCodeSegments } from "../../composables/inlineCode";
 
 const { nickColor: baseNickColor } = useNickColor();
 const { primaryColor } = useDarkMode();
@@ -350,9 +351,12 @@ function mappoolSegments(message) {
 }
 
 function renderChatMessageSegments(message) {
-  return mappoolSegments(message).flatMap((segment) => {
-    if (segment.type !== "text") return [segment];
-    return messageSegments(segment.value).flatMap((nested) => (nested.type === "text" ? teamSegments(nested.value) : [nested]));
+  return parseInlineCodeSegments(message.text).flatMap((part) => {
+    if (part.type === "code") return [part];
+    return mappoolSegments({ ...message, text: part.value }).flatMap((segment) => {
+      if (segment.type !== "text") return [segment];
+      return messageSegments(segment.value).flatMap((nested) => (nested.type === "text" ? teamSegments(nested.value) : [nested]));
+    });
   });
 }
 
@@ -611,7 +615,12 @@ function forwardCommand(command) {
         <div v-for="(msg, index) in messages" :key="msg.id" class="chat-line" :class="{ 'chat-line--system': msg.type === 'system' }">
           <template v-if="msg.type === 'system'">
             <span class="chat-line__system-rule" aria-hidden="true"></span>
-            <span class="chat-line__system-text">{{ msg.text }}</span>
+            <span class="chat-line__system-text">
+              <template v-for="(segment, segmentIndex) in parseInlineCodeSegments(msg.text)" :key="`${msg.id}-system-${segmentIndex}`">
+                <code v-if="segment.type === 'code'" class="chat-line__inline-code">{{ segment.value }}</code>
+                <template v-else>{{ segment.value }}</template>
+              </template>
+            </span>
             <span class="chat-line__system-rule" aria-hidden="true"></span>
           </template>
           <template v-else>
@@ -631,6 +640,7 @@ function forwardCommand(command) {
                   <span>{{ segment.value }}</span>
                 </a>
                 <span v-else-if="segment.type === 'team'" :style="teamTextStyle(segment.color)">{{ segment.value }}</span>
+                <code v-else-if="segment.type === 'code'" class="chat-line__inline-code">{{ segment.value }}</code>
                 <button
                   v-else-if="segment.type === 'mappool'"
                   type="button"
@@ -945,6 +955,17 @@ function forwardCommand(command) {
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+.chat-line__inline-code {
+  overflow-wrap: anywhere;
+  padding: 0.08rem 0.3rem;
+  border: 1px solid rgba(var(--app-primary-rgb), 0.35);
+  border-radius: 0.28rem;
+  background: rgba(var(--app-primary-rgb), 0.1);
+  color: var(--app-primary-bright);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.92em;
 }
 
 .chat-line__link {
