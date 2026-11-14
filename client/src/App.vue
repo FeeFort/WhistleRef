@@ -1719,7 +1719,7 @@ function replaceServerChatHistory(chat, messages) {
     return Number(left.serverMessageId || 0) - Number(right.serverMessageId || 0);
   });
   unreadChats[chatId] ??= false;
-  resetStableMessagePhases(chatId);
+  resetLobbyMessagePhases(chatId);
 }
 
 function loadLazerUserProfile(roomId, userId) {
@@ -2438,8 +2438,12 @@ function persistLobbyMatch(localId, patch) {
   return true;
 }
 
-function resetStableMessagePhases(chatId) {
-  if (!joinedChannels.value.some((channel) => channel.id === chatId)) return;
+function isLobbyChat(chatId) {
+  return joinedChannels.value.some((channel) => channel.id === chatId) || String(chatId).startsWith("lazer:");
+}
+
+function resetLobbyMessagePhases(chatId) {
+  if (!isLobbyChat(chatId)) return;
   const context = createMappoolChatContext();
   lobbyContexts[chatId] = context;
   for (const message of channelMessages[chatId] || []) {
@@ -2507,7 +2511,7 @@ function addJoinedChannel(channelName) {
   lobbyStates[channel.id] = channel.lobby;
   channelMessages[channel.id] ||= [];
   lobbyContexts[channel.id] ||= createMappoolChatContext();
-  resetStableMessagePhases(channel.id);
+  resetLobbyMessagePhases(channel.id);
   const serverChat = findServerChatForLocalId(channel.id);
   const pendingState = serverChat ? pendingLobbyServerStates.get(Number(serverChat.id)) : null;
   if (serverChat && pendingState) {
@@ -2902,7 +2906,7 @@ function notifyIncomingMessage(chatId, message) {
 function appendChatMessage(chatId, message, { notify = false } = {}) {
   const list = chatId === "bancho" ? banchoMessages.value : (channelMessages[chatId] ||= []);
   const normalizedMessage = { ...message, time: message.time || new Date().toISOString() };
-  if (chatId !== "bancho" && joinedChannels.value.some((channel) => channel.id === chatId)) {
+  if (isLobbyChat(chatId)) {
     const context = (lobbyContexts[chatId] ||= createMappoolChatContext());
     normalizedMessage.phaseAtMessage = advanceMappoolChatContext(context, normalizedMessage, { roomClosed: Boolean(roomClosedByChat[chatId]) });
   }
@@ -3796,12 +3800,13 @@ function queueLazerChatMessage(roomId, text, isAction = false) {
     isAction,
     pending: true,
   };
-  list.push(pendingMessage);
+  appendChatMessage(chatId, pendingMessage);
   pendingLazerMessages.push({ chatId, messageId: pendingMessage.id });
   if (sendLazerChatMessage(id, messageText, isAction)) return true;
 
   const index = list.indexOf(pendingMessage);
   if (index !== -1) list.splice(index, 1);
+  resetLobbyMessagePhases(chatId);
   const pendingIndex = pendingLazerMessages.findIndex((item) => item.messageId === pendingMessage.id);
   if (pendingIndex !== -1) pendingLazerMessages.splice(pendingIndex, 1);
   toast.add({ severity: "error", summary: "Message failed", detail: "The chat connection is not available.", life: 4000 });
