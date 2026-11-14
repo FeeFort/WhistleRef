@@ -273,7 +273,10 @@ function handleSave(data) {
               rounded
               class="command-bar__btn"
               :disabled="disabled || (cmd.id === 'lazer-start' && startCountdownSeconds > 0)"
-              :class="`command-bar__btn--${cmd.tone}`"
+              :class="[
+                `command-bar__btn--${cmd.tone}`,
+                { 'command-bar__btn--countdown-active': cmd.id === 'lazer-abort-timer' && startCountdownSeconds > 0 },
+              ]"
               @click="sendBuiltin(cmd)"
             >
               <span v-if="cmd.id === 'lazer-start' && startCountdownSeconds > 0" class="command-bar__countdown" aria-live="polite">
@@ -489,6 +492,8 @@ function handleSave(data) {
 }
 
 .command-bar__btn {
+  position: relative;
+  isolation: isolate;
   width: 2.55rem;
   height: 2.55rem;
   border: 1px solid var(--app-border);
@@ -500,6 +505,23 @@ function handleSave(data) {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+
+.command-bar__btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: rgba(255, 109, 120, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 280ms ease;
+}
+
+.command-bar__btn :deep(*) {
+  position: relative;
+  z-index: 1;
 }
 
 .command-bar__countdown {
@@ -535,6 +557,11 @@ function handleSave(data) {
   color: var(--app-red) !important;
 }
 
+.command-bar .command-bar__btn.command-bar__btn--countdown-active:hover:not(:disabled)::before {
+  opacity: 0 !important;
+  animation: none !important;
+}
+
 .command-bar .command-bar__btn.command-bar__btn--amber:hover:not(:disabled) {
   background-color: rgba(242, 184, 75, 0.16) !important;
   background-image: none !important;
@@ -553,6 +580,31 @@ function handleSave(data) {
 
 .command-bar__btn--red {
   color: var(--app-red) !important;
+}
+
+.command-bar__btn--countdown-active::before {
+  animation: command-bar-countdown-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes command-bar-countdown-pulse {
+  0%, 100% {
+    opacity: 0;
+  }
+
+  20%, 70% {
+    opacity: 0.55;
+  }
+
+  45% {
+    opacity: 0.26;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .command-bar__btn--countdown-active::before {
+    animation: none;
+    opacity: 0.4;
+  }
 }
 
 .command-bar__btn--amber {
