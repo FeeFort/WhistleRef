@@ -12,7 +12,7 @@ import {
 } from "../db/chatsRepo.js";
 import { getAllSettings, getSetting as readSetting, setSetting as writeSetting } from "../db/settingsRepo.js";
 import { countMessages, getMessagesPage, getHighestExternalId as readHighestExternalId } from "../db/messagesRepo.js";
-import type { Chat, ChatSettings, ChatStatus, ChatWire, Message, MessageWire, OpenOrCreateChatInput, RecordMessageInput, ChatDeleteResult } from "../types/index.js";
+import type { Chat, ChatClock, ChatServiceCallbacks, ChatSettings, ChatStatus, ChatWire, Message, MessageWire, OpenOrCreateChatInput, RecordMessageInput, ChatDeleteResult, PlatformAdapter } from "../types/index.js";
 import { ChatLifecycle } from "./chatLifecycle.js";
 import { MessageRecorder } from "./messageRecorder.js";
 import { toChatWire, toMessageWire } from "./chatMapper.js";
@@ -29,28 +29,17 @@ import {
   type LobbyStateDocument,
 } from "./lobbyState.js";
 
-type Clock = () => string;
-export interface ChatServiceCallbacks {
-  onChatUpdated?: (chat: ChatWire) => void;
-  onChatDeleted?: (chatId: number) => void;
-  onMessage?: (message: MessageWire) => void;
-  onSettingsUpdated?: (settings: ChatSettings) => void;
-  onLobbyStateUpdated?: (chatId: number, lobbyState: LobbyStateDocument) => void;
-}
-export interface PlatformAdapter {
-  detach(chat: ChatWire): void;
-}
-
 export class ChatService {
   readonly lifecycle: ChatLifecycle;
   readonly recorder: MessageRecorder;
   private readonly adapters = new Map<string, PlatformAdapter>();
   private closed = false;
+  private transientMessageId = 0;
 
   constructor(
     private readonly database: DatabaseSync,
     private readonly callbacks: ChatServiceCallbacks = {},
-    private readonly now: Clock = () => new Date().toISOString(),
+    private readonly now: ChatClock = () => new Date().toISOString(),
   ) {
     this.lifecycle = new ChatLifecycle(database, now);
     this.recorder = new MessageRecorder(database, now);
@@ -89,6 +78,9 @@ export class ChatService {
     const result = this.recorder.recordMessage(chatId, input);
     if (result.inserted) this.callbacks.onMessage?.(toMessageWire(result.message));
     return result;
+  }
+  emitTransientMessage(message: Omit<MessageWire, "id">): void {
+    this.callbacks.onMessage?.({ id: --this.transientMessageId, ...message, hidden: true });
   }
   recordEvent(chatId: number, text: string) {
     const result = this.recorder.recordEvent(chatId, text);

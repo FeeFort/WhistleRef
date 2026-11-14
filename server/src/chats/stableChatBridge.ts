@@ -1,4 +1,4 @@
-import type { ConnectionState, ChatWire, LobbyState } from "../types/index.js";
+import type { ConnectionState, ChatWire, LobbyState, PendingStableChatRestore, StableChatBridgeOptions } from "../types/index.js";
 import type { ChatService } from "./chatService.js";
 
 export const STABLE_CHAT_SERVICE_TEXT = {
@@ -23,35 +23,12 @@ export function formatMultiplayerChannel(externalId: number): string {
   return `#mp_${externalId}`;
 }
 
-export interface StableIrcAdapter {
-  joinChannel(channel: string): void;
-  leaveChannel(channel: string): void;
-  isReady(): boolean;
-  ownNick(): string | null;
-}
-
-export interface StableChatLogger {
-  debug(message: string, fields?: Record<string, unknown>): void;
-  warn(message: string, fields?: Record<string, unknown>): void;
-}
-
-export interface StableChatBridgeOptions {
-  chatService: ChatService;
-  irc: StableIrcAdapter;
-  setTimeout?: typeof setTimeout;
-  clearTimeout?: typeof clearTimeout;
-  clock?: () => string;
-  logger: StableChatLogger;
-}
-
-type PendingRestore = { chatId: number; timer: ReturnType<typeof setTimeout> };
-
 export class StableChatBridge {
   private readonly setTimer: typeof setTimeout;
   private readonly clearTimer: typeof clearTimeout;
   private readonly now: () => string;
   private readonly gaps = new Set<string>();
-  private readonly pending = new Map<string, PendingRestore>();
+  private readonly pending = new Map<string, PendingStableChatRestore>();
   private readonly outgoingEchoes = new Map<string, number[]>();
   private previousState: ConnectionState = "disconnected";
   private shuttingDown = false;
@@ -121,6 +98,7 @@ export class StableChatBridge {
   }
 
   onOutgoingMessage(channel: string, text: string): void {
+    if (/^!mp\s+settings(?:\s|$)/i.test(text)) return;
     const nick = this.options.irc.ownNick();
     if (!nick) {
       this.options.logger.warn("Stable chat message could not be recorded without an IRC nickname", { channel });
@@ -130,6 +108,19 @@ export class StableChatBridge {
     const key = this.echoKey(channel, text);
     this.outgoingEchoes.set(key, [...(this.outgoingEchoes.get(key) ?? []), Date.now()]);
     this.recordIncoming(channel, nick, text);
+  }
+
+  emitHiddenSettingsResponse(channel: string, text: string, author: string, createdAt?: string): void {
+    const chat = this.findChat(parseMultiplayerChannel(channel));
+    if (!chat || chat.status === "archived") return;
+    this.options.chatService.emitTransientMessage({
+      chatId: chat.id,
+      kind: "message",
+      author,
+      senderId: null,
+      text,
+      createdAt: createdAt ?? this.now(),
+    });
   }
 
   onSystemLine(channel: string, text: string): void {
