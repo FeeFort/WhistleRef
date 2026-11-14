@@ -16,8 +16,13 @@ export interface OsuApiUserLookupResponse {
 
 export interface OsuApiBeatmapLookupResponse {
   id?: number;
+  version?: string;
   artist?: string;
   title?: string;
+  beatmapset?: {
+    artist?: string;
+    title?: string;
+  };
   mode_int?: number;
   ruleset_id?: number;
 }

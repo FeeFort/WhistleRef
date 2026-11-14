@@ -11,6 +11,14 @@ import { sendJson } from "../wsGateway.js";
 
 const FAILURE = "The command could not be completed.";
 
+function readableHubError(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  const message = error.message.trim();
+  if (!message || /^An unexpected error occurred invoking '.+' on the server\.$/.test(message)) return null;
+  if (/^(?:Cannot invoke |SignalR |WebSocket |Failed to start the connection)/i.test(message)) return null;
+  return message;
+}
+
 const MOD_ALIASES: Record<string, string> = {
   easy: "EZ",
   nofail: "NF",
@@ -179,14 +187,14 @@ async function execute(roomId: number, input: string): Promise<void> {
   if (command === "lock" || command === "unlock") {
     const locked = command === "lock";
     await invokeHub("SetLockState", roomId, { locked });
-    say(roomId, locked ? "Locked the match" : "Unlocked the match");
+    say(roomId, locked ? "Locked the match." : "Unlocked the match.");
     return;
   }
   if (command === "size") {
     if (!/^\d+$/.test(args)) return;
     const size = Number(args);
     await invokeHub("ChangeRoomSettings", roomId, { max_participants: size });
-    say(roomId, `Changed match to size ${size || "Infinite"}`);
+    say(roomId, `Changed match to size ${size || "Infinite"}.`);
     return;
   }
   if (command === "set") {
@@ -198,7 +206,7 @@ async function execute(roomId: number, input: string): Promise<void> {
     if (mode === 1 || mode === 3) return say(roomId, "This team mode is not supported in Lazer.");
     if (!matchType) return;
     await invokeHub("ChangeRoomSettings", roomId, { type: matchType, max_participants: size });
-    say(roomId, `Changed match settings to ${size || "Infinite"} slots, ${matchType === "head_to_head" ? "HeadToHead" : "TeamVs"}`);
+    say(roomId, `Changed match settings to ${size || "Infinite"} slots, ${matchType === "head_to_head" ? "HeadToHead" : "TeamVs"}.`);
     return;
   }
   if (["move", "team", "kick", "invite", "addref", "removeref"].includes(command)) {
@@ -217,50 +225,54 @@ async function execute(roomId: number, input: string): Promise<void> {
       team = values[2].toLowerCase() as "red" | "blue";
     }
     const user = await resolveUser(target);
-    if (!user || (["move", "team", "kick"].includes(command) && !hasRoomPlayer(roomId, user.userId))) return say(roomId, "User not found");
+    if (!user || (["move", "team", "kick"].includes(command) && !hasRoomPlayer(roomId, user.userId))) return say(roomId, "User not found.");
     if (command === "move" || command === "team") {
       await invokeHub("MoveUser", roomId, { user_id: user.userId, ...(slot === undefined ? {} : { slot }), ...(team ? { team } : {}) });
-      say(roomId, command === "move" ? `Moved ${user.username} into slot ${slot! + 1}` : `Moved ${user.username} to team ${team === "red" ? "Red" : "Blue"}`);
+      say(roomId, command === "move" ? `Moved ${user.username} into slot ${slot! + 1}.` : `Moved ${user.username} to team ${team === "red" ? "Red" : "Blue"}.`);
     } else if (command === "kick") {
       await invokeHub("KickPlayer", roomId, user.userId);
-      say(roomId, `Kicked ${user.username} from the match`);
+      say(roomId, `Kicked ${user.username} from the match.`);
     } else if (command === "invite") {
       await invokeHub("InvitePlayer", roomId, user.userId);
-      say(roomId, `Invited ${user.username} to the room`);
+      say(roomId, `Invited ${user.username} to the room.`);
     } else if (command === "addref") {
       await invokeHub("AddReferee", roomId, user.userId);
-      say(roomId, `Added ${user.username} to the match referees`);
+      say(roomId, `Added ${user.username} to the match referees.`);
     } else {
       await invokeHub("RemoveReferee", roomId, user.userId);
-      say(roomId, `Removed ${user.username} from the match referees`);
+      say(roomId, `Removed ${user.username} from the match referees.`);
     }
     return;
   }
   if (command === "close") {
     await invokeHub("CloseRoom", roomId);
     roomManager.removeRoom(roomId, { exclude: true, reason: "closed" });
-    say(roomId, "Closed the room");
+    say(roomId, "Closed the room.");
     return;
   }
   if (command === "start") {
     if (args && !/^\d+$/.test(args)) return;
     const countdown = args ? Number(args) : 0;
     await invokeHub("StartMatch", roomId, { countdown });
-    say(roomId, countdown ? `Started the match with a ${countdown} second countdown` : "Started the match");
+    say(roomId, countdown ? `Started the match with a ${countdown} second countdown.` : "Started the match.");
     return;
   }
   if (command === "map") {
-    if (!/^\d+$/.test(args) || Number(args) <= 0) return say(roomId, "Invalid map ID provided");
+    if (!/^\d+$/.test(args) || Number(args) <= 0) return say(roomId, "Invalid map ID provided.");
+    const beatmapId = Number(args);
+    let beatmap: OsuApiBeatmapLookupResponse;
     try {
-      const beatmapId = Number(args);
-      const beatmap = (await fetchApi(await getAccessToken(), `beatmaps/${beatmapId}`)) as OsuApiBeatmapLookupResponse;
-      if (!beatmap?.id) throw new Error("Map not found");
-      const item = currentPlaylistItem(room);
-      await invokeHub("EditCurrentPlaylistItem", roomId, { beatmap_id: beatmap.id, ruleset_id: beatmap.mode_int ?? beatmap.ruleset_id ?? item?.ruleset_id });
-      say(roomId, `Changed beatmap to https://osu.ppy.sh/b/${beatmap.id} ${beatmap.artist || "Unknown artist"} - ${beatmap.title || "Unknown title"}`);
+      beatmap = (await fetchApi(await getAccessToken(), `beatmaps/${beatmapId}`)) as OsuApiBeatmapLookupResponse;
+      if (!beatmap?.id) return say(roomId, "Invalid map ID provided.");
     } catch {
-      say(roomId, "Invalid map ID provided");
+      return say(roomId, "Invalid map ID provided.");
     }
+    const item = currentPlaylistItem(room);
+    await invokeHub("EditCurrentPlaylistItem", roomId, { beatmap_id: beatmap.id, ruleset_id: beatmap.mode_int ?? beatmap.ruleset_id ?? item?.ruleset_id });
+    const artist = beatmap.beatmapset?.artist || beatmap.artist || "Unknown artist";
+    const title = beatmap.beatmapset?.title || beatmap.title || "Unknown title";
+    const difficulty = beatmap.version ? ` [${beatmap.version}]` : "";
+    say(roomId, `Changed beatmap to https://osu.ppy.sh/b/${beatmap.id} ${artist} - ${title}${difficulty}.`);
     return;
   }
   if (command === "mods") {
@@ -268,7 +280,7 @@ async function execute(roomId: number, input: string): Promise<void> {
     const item = currentPlaylistItem(room);
     if (rawTokens.length === 1 && rawTokens[0] === "0") {
       await invokeHub("EditCurrentPlaylistItem", roomId, { required_mods: [], allowed_mods: [], freestyle: false, ruleset_id: item?.ruleset_id, beatmap_id: item?.beatmap_id });
-      say(roomId, "Updated match mods: disabled all mods");
+      say(roomId, "Updated match mods: disabled all mods.");
       return;
     }
     const zeroWithFreemod = rawTokens.includes("0") && rawTokens.every((token) => token === "0" || /^(?:fm|freemod)$/i.test(token));
@@ -277,7 +289,7 @@ async function execute(roomId: number, input: string): Promise<void> {
       if (zeroWithFreemod && rawToken === "0") continue;
       if (/^\d+$/.test(rawToken)) {
         const decoded = expandLegacyModMask(rawToken);
-        if (!decoded) return say(roomId, `Mod ${rawToken} not found`);
+        if (!decoded) return say(roomId, `Mod ${rawToken} not found.`);
         expanded.push(...decoded);
       } else expanded.push(rawToken);
     }
@@ -288,11 +300,11 @@ async function execute(roomId: number, input: string): Promise<void> {
     const byRuleset = modsForRuleset(item?.ruleset_id ?? room?.ruleset_id);
     for (const acronym of requested) {
       const definition = all.get(acronym);
-      if (!definition) return say(roomId, `Mod ${acronym} not found`);
+      if (!definition) return say(roomId, `Mod ${acronym} not found.`);
       const current = byRuleset.get(acronym);
       const name = String(definition.Name || acronym);
-      if (!current) return say(roomId, `${name} is not supported in this ruleset`);
-      if (current.ValidForMultiplayer !== true) return say(roomId, `${String(current.Name || name)} is not supported in multiplayer rooms`);
+      if (!current) return say(roomId, `${name} is not supported in this ruleset.`);
+      if (current.ValidForMultiplayer !== true) return say(roomId, `${String(current.Name || name)} is not supported in multiplayer rooms.`);
     }
     const conflicts: string[] = [];
     for (let i = 0; i < requested.length; i++)
@@ -321,20 +333,22 @@ async function execute(roomId: number, input: string): Promise<void> {
     const enabledNames = requested.map((acronym) => String(all.get(acronym)?.Name || acronym));
     const summary = [...(enabledNames.length ? [`enabled ${enabledNames.join(", ")}`] : []), `${wantsFreemod ? "enabled" : "disabled"} Freemod`].join(", ");
     await invokeHub("EditCurrentPlaylistItem", roomId, { required_mods: requiredMods, allowed_mods: allowedMods, freestyle: false, ruleset_id: item?.ruleset_id, beatmap_id: item?.beatmap_id });
-    say(roomId, `Updated match mods: ${summary}`);
+    say(roomId, `Updated match mods: ${summary}.`);
     return;
   }
   if (command === "abort") {
-    if (!room?.players.some((player) => player.status === "playing")) return say(roomId, "The match is not in progress");
+    if (!room?.players.some((player) => player.status === "playing")) return say(roomId, "The match is not in progress.");
     await invokeHub("AbortMatch", roomId);
-    say(roomId, "Aborted the match");
+    say(roomId, "Aborted the match.");
     return;
   }
   if (command === "name") {
     if (!args) return;
     await invokeHub("ChangeRoomSettings", roomId, { name: args });
-    say(roomId, `Room name updated to "${args}"`);
+    say(roomId, `Room name updated to "${args}".`);
+    return;
   }
+  say(roomId, `Unknown !mp command: ${command}.`);
 }
 
 export async function handleLazerMpCommand(client: WebSocket, message: ClientMessage): Promise<void> {
@@ -345,8 +359,8 @@ export async function handleLazerMpCommand(client: WebSocket, message: ClientMes
     if (!roomManager.getRoom(request.room_id)) throw new Error(`Room ${request.room_id} is not tracked.`);
     try {
       await execute(request.room_id, request.command);
-    } catch {
-      say(request.room_id, FAILURE);
+    } catch (error) {
+      say(request.room_id, readableHubError(error) || FAILURE);
     }
     await acknowledge(client, message);
   } catch (error) {
