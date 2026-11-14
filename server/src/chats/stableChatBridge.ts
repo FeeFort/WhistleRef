@@ -1,5 +1,4 @@
 import type { ConnectionState, ChatWire, LobbyState, PendingStableChatRestore, StableChatBridgeOptions } from "../types/index.js";
-import type { ChatService } from "./chatService.js";
 
 export const STABLE_CHAT_SERVICE_TEXT = {
   connectionLost: "Connection to the chat was lost. Messages sent while you were away may be missing.",
@@ -108,19 +107,6 @@ export class StableChatBridge {
     const key = this.echoKey(channel, text);
     this.outgoingEchoes.set(key, [...(this.outgoingEchoes.get(key) ?? []), Date.now()]);
     this.recordIncoming(channel, nick, text);
-  }
-
-  emitHiddenSettingsResponse(channel: string, text: string, author: string, createdAt?: string): void {
-    const chat = this.findChat(parseMultiplayerChannel(channel));
-    if (!chat || chat.status === "archived") return;
-    this.options.chatService.emitTransientMessage({
-      chatId: chat.id,
-      kind: "message",
-      author,
-      senderId: null,
-      text,
-      createdAt: createdAt ?? this.now(),
-    });
   }
 
   onSystemLine(channel: string, text: string): void {

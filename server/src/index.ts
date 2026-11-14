@@ -10,7 +10,7 @@ import { parseBanchoBotMessage, parseLobbyCommand } from "./banchoBotParser.js";
 import { login as loginOsu, logout as logoutOsu, getAccessToken, restoreSession, getState } from "./auth/auth.js";
 import { fetchApi } from "./osu-api/osuApiClient.js";
 import { config } from "./config.js";
-import { ClientMessage, ConnectionState, IrcCredentials, IrcLine, LobbyState, ParsedBanchoBotMessage, PendingStableSettingsResponse, Player, PlayerScore, Team, WinConditionContext } from "./types/index.js";
+import { ClientMessage, ConnectionState, IrcCredentials, IrcLine, LobbyState, ParsedBanchoBotMessage, Player, PlayerScore, Team, WinConditionContext } from "./types/index.js";
 import { fileURLToPath } from "node:url";
 import { UpdateError, UpdateManager } from "./updater/updateManager.js";
 import { applyPendingUpdate } from "./updater/applyUpdate.js";
@@ -359,7 +359,6 @@ class BanchoConnection {
   matchScoreBuffers: Map<string, Map<string, number>> = new Map();
   activeWinConditions: Map<string, { beatmapId: number; source: string }> = new Map();
   pendingAutoSettings: Set<string> = new Set();
-  pendingSettingsResponses = new Map<string, PendingStableSettingsResponse>();
 
   sendStatus(client: WebSocket | null = null, detail: string | null = null) {
     const payload: { type: string; state: ConnectionState; detail?: string } = { type: "status", state: this.state };
@@ -785,13 +784,11 @@ class BanchoConnection {
   requestLobbySettings(channel: string): void {
     const key = normalizeChannel(channel);
     this.pendingAutoSettings.add(key);
-    this.pendingSettingsResponses.set(key, { remainingPlayers: null });
     try {
       this.sendMessage(channel, "!mp settings");
       ircLog.traceOut("Automatic settings request", { channel });
     } catch (error) {
       this.pendingAutoSettings.delete(key);
-      this.pendingSettingsResponses.delete(key);
       ircLog.warn("Automatic settings request failed", { channel, error });
     }
   }
@@ -924,31 +921,15 @@ class BanchoConnection {
       const text = message.params[1];
       const isDirectMessage = Boolean(this.credentials?.login && target.toLowerCase() === this.credentials.login.toLowerCase());
       const channel = isDirectMessage ? (nick?.toLowerCase() === "banchobot" ? "BanchoBot" : nick || target) : target;
-      const settingsResponseKey = normalizeChannel(channel);
-      const pendingSettingsResponse = this.pendingSettingsResponses.get(settingsResponseKey);
-      const hiddenSettingsReply = isMultiplayerChannel(channel)
-        && nick?.toLowerCase() === "banchobot"
-        && pendingSettingsResponse !== undefined;
       if (isMultiplayerChannel(channel)) {
         this.handleLobbyMessage(channel, nick, text);
       }
-      if (hiddenSettingsReply) {
-        stableChatBridge?.emitHiddenSettingsResponse(channel, text, nick!, new Date().toISOString());
-        const playersLine = text.match(/^Players:\s*(\d+)\s*$/i);
-        if (playersLine) {
-          pendingSettingsResponse!.remainingPlayers = Number(playersLine[1]);
-          if (pendingSettingsResponse!.remainingPlayers === 0) this.pendingSettingsResponses.delete(settingsResponseKey);
-        } else if (pendingSettingsResponse!.remainingPlayers !== null) {
-          pendingSettingsResponse!.remainingPlayers -= 1;
-          if (pendingSettingsResponse!.remainingPlayers <= 0) this.pendingSettingsResponses.delete(settingsResponseKey);
-        }
-      }
       const consumed = this.consumeAutoSettings(channel, nick, text);
       const timestamp = new Date().toISOString();
-      if (!consumed && !hiddenSettingsReply && isMultiplayerChannel(channel)) {
+      if (!consumed && isMultiplayerChannel(channel)) {
         stableChatBridge?.onChannelMessage(channel, nick, text, timestamp);
       }
-      if (!consumed && !hiddenSettingsReply) {
+      if (!consumed) {
         // TODO(client-migration): Remove this legacy event for multiplayer channels after the client uses chat_message.
         broadcast({
           type: "message",

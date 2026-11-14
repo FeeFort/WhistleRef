@@ -1621,7 +1621,7 @@ function handleLazerError(event) {
 }
 
 function normalizeServerChatMessage(message) {
-  if (!message || message.hidden === true || !Number.isSafeInteger(Number(message.id))) return null;
+  if (!message || !Number.isSafeInteger(Number(message.id))) return null;
   const kind = String(message.kind || "message");
   let author = message.author || "";
   const text = String(message.text || "");
@@ -1653,7 +1653,6 @@ function reconcilePendingServerMessage(chatId, normalized) {
 }
 
 function handleServerChatMessage(message) {
-  if (message?.hidden === true) return;
   const chat = serverChatsById[message?.chatId];
   if (!chat) {
     if (message && !pendingServerMessages.some((item) => Number(item.id) === Number(message.id))) pendingServerMessages.push(message);

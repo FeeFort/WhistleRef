@@ -1,8 +1,6 @@
 import type { Chat, ChatPlatform, Message, MessageKind } from "./db.js";
 import type { LobbyStateDocument } from "../chats/lobbyState.js";
 import type { ChatService } from "../chats/chatService.js";
-import type { ConnectionState } from "./irc.js";
-import type { LobbyState } from "./bancho-bot.js";
 
 export type ChatClock = () => string;
 
@@ -44,10 +42,6 @@ export interface PendingStableChatRestore {
   timer: ReturnType<typeof setTimeout>;
 }
 
-export interface PendingStableSettingsResponse {
-  remainingPlayers: number | null;
-}
-
 export interface ChatWire {
   id: number;
   platform: ChatPlatform;
@@ -67,7 +61,6 @@ export interface MessageWire {
   senderId: number | null;
   text: string;
   createdAt: string;
-  hidden?: boolean;
 }
 export type ChatSettings = Record<string, unknown>;
 export interface ChatDeleteResult {

@@ -254,9 +254,7 @@ async function execute(roomId: number, input: string): Promise<void> {
       ...(queueMode ? { queue_mode: queueMode } : {}),
     });
     const sizeLabel = (size ?? room?.max_participants) ? `${size ?? room?.max_participants} slots` : "Infinite slots";
-    const queueModeLabel = queueMode
-      ? `, ${queueMode === "host_only" ? "Host only" : queueMode === "all_players" ? "All players" : "All players (round robin)"} queue`
-      : "";
+    const queueModeLabel = queueMode ? `, ${queueMode === "host_only" ? "Host only" : queueMode === "all_players" ? "All players" : "All players (round robin)"} queue` : "";
     say(roomId, `Changed match settings to ${matchType === "head_to_head" ? "HeadToHead" : "TeamVs"}, ${sizeLabel}${queueModeLabel}.`);
     return;
   }
@@ -327,7 +325,12 @@ async function execute(roomId: number, input: string): Promise<void> {
     return;
   }
   if (command === "mods") {
-    const rawTokens = args ? args.split(/\s+/).filter(Boolean).map((token) => (/^nm$/i.test(token) ? "0" : token)) : [];
+    const rawTokens = args
+      ? args
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((token) => (/^nm$/i.test(token) ? "0" : token))
+      : [];
     const item = currentPlaylistItem(room);
     if (rawTokens.length === 1 && rawTokens[0] === "0") {
       await invokeHub("EditCurrentPlaylistItem", roomId, { required_mods: [], allowed_mods: [], freestyle: false, ruleset_id: item?.ruleset_id, beatmap_id: item?.beatmap_id });
@@ -389,7 +392,13 @@ async function execute(roomId: number, input: string): Promise<void> {
       : [];
     const enabledNames = requested.map((acronym) => String(all.get(acronym)?.Name || acronym));
     const summary = [...(enabledNames.length ? [`enabled ${enabledNames.join(", ")}`] : []), wantsFreestyle ? "enabled Freestyle" : `${wantsFreemod ? "enabled" : "disabled"} Freemod`].join(", ");
-    await invokeHub("EditCurrentPlaylistItem", roomId, { required_mods: requiredMods, allowed_mods: allowedMods, freestyle: wantsFreestyle, ruleset_id: item?.ruleset_id, beatmap_id: item?.beatmap_id });
+    await invokeHub("EditCurrentPlaylistItem", roomId, {
+      required_mods: requiredMods,
+      allowed_mods: allowedMods,
+      freestyle: wantsFreestyle,
+      ruleset_id: item?.ruleset_id,
+      beatmap_id: item?.beatmap_id,
+    });
     say(roomId, `Updated match mods: ${summary}.`);
     return;
   }
@@ -417,15 +426,11 @@ async function execute(roomId: number, input: string): Promise<void> {
       const current = byRuleset.get(acronym);
       const name = String(definition.Name || acronym);
       if (!current) return say(roomId, `${name} is not supported in this ruleset.`);
-      if (current.ValidForMultiplayer !== true || current.ValidForMultiplayerAsFreeMod !== true)
-        return say(roomId, `${String(current.Name || name)} is not supported as an allowed multiplayer mod.`);
+      if (current.ValidForMultiplayer !== true || current.ValidForMultiplayerAsFreeMod !== true) return say(roomId, `${String(current.Name || name)} is not supported as an allowed multiplayer mod.`);
       if (required.has(acronym)) return say(roomId, `${name} is already a required mod.`);
       const incompatible = [...required].some((requiredAcronym) => {
         const requiredDefinition = all.get(requiredAcronym);
-        return (
-          definition.IncompatibleMods?.some((mod) => String(mod).toUpperCase() === requiredAcronym) ||
-          requiredDefinition?.IncompatibleMods?.some((mod) => String(mod).toUpperCase() === acronym)
-        );
+        return definition.IncompatibleMods?.some((mod) => String(mod).toUpperCase() === requiredAcronym) || requiredDefinition?.IncompatibleMods?.some((mod) => String(mod).toUpperCase() === acronym);
       });
       if (incompatible) return say(roomId, `${name} conflicts with a required mod.`);
     }
