@@ -1573,8 +1573,6 @@ function lazerErrorSummary(request) {
     {
       lazer_make_room: "Create room failed",
       lazer_join_room: "Join room failed",
-      lazer_leave_room: "Leave room failed",
-      lazer_load_chat: "Chat history failed",
       lazer_send_chat_message: "Message failed",
       lazer_change_room_settings: "Update room failed",
       lazer_add_playlist_item: "Add map failed",

@@ -28,11 +28,8 @@ import type {
   LazerStatusHandler,
   HubEventHandler,
   LazerHubEvent,
-  PendingChatLoad,
-  ChatMessage,
 } from "../types/index.js";
 import { config } from "../config.js";
-import { fetchChatMessages } from "./chatApi.js";
 import { invokeHub, invokeHubWithRetry } from "./refereeHubClient.js";
 
 const log = logger.child("lazer", "roomManager");
@@ -47,7 +44,6 @@ class RoomManager {
   private rooms = new Map<number, RoomState>();
   private pendingJoins = new Map<number, PendingRoomJoin>();
   private pendingCreations = new Set<PendingRoomJoin>();
-  private pendingChatLoads = new Map<number, PendingChatLoad>();
   private resyncPromise: Promise<void> | null = null;
   private onRoomChanged: ((room: RoomState) => void) | null = null;
   private onRoomJoined: ((room: RoomState, explicit: boolean) => void) | null = null;
@@ -86,15 +82,12 @@ class RoomManager {
       generation: this.generation,
       joins: this.pendingJoins.size,
       creations: this.pendingCreations.size,
-      chatLoads: this.pendingChatLoads.size,
     });
     this.excludedRooms.clear();
     for (const pending of [...this.pendingJoins.values(), ...this.pendingCreations]) pending.cancelled = true;
     this.pendingJoins.clear();
     this.pendingCreations.clear();
     this.resyncPromise = null;
-    for (const load of this.pendingChatLoads.values()) load.cancelled = true;
-    this.pendingChatLoads.clear();
     for (const roomId of [...this.rooms.keys()]) this.removeRoom(roomId, { reason: "reset" });
     this.joinedChatChannels.clear();
     for (const waiters of this.chatWaiters.values()) {
@@ -156,42 +149,6 @@ class RoomManager {
       waiters.push(done);
       this.chatWaiters.set(channelId, waiters);
     });
-  }
-
-  loadChat(roomId: number): Promise<ChatMessage[]> {
-    log.debug("Loading room chat", { roomId });
-    const existing = this.pendingChatLoads.get(roomId);
-    if (existing) {
-      log.trace("Sharing pending chat load", { roomId });
-      return existing.promise;
-    }
-    const room = this.rooms.get(roomId);
-    if (!room) return Promise.reject(Object.assign(new Error(`Room ${roomId} is not tracked.`), { stage: "channel" }));
-    const generation = this.generation;
-    const pending: PendingChatLoad = { cancelled: false, promise: Promise.resolve([]) };
-    this.pendingChatLoads.set(roomId, pending);
-    pending.promise = (async () => {
-      let stage = "channel";
-      try {
-        await this.waitForChatChannel(room.chat_channel_id);
-        if (pending.cancelled || generation !== this.generation) throw new Error("osu! session or room ended.");
-        stage = "history";
-        const history = await fetchChatMessages(room.chat_channel_id);
-        if (pending.cancelled || generation !== this.generation) throw new Error("osu! session or room ended.");
-        log.debug("Room chat loaded", { roomId, count: history.length });
-        return history;
-      } catch (error) {
-        log.warn("Room chat load failed", { roomId, stage, error });
-        // TODO: Retry chat initialization with the shared exponential backoff policy.
-        throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
-          stage,
-          ...(pending.cancelled || generation !== this.generation ? { code: "SESSION_ENDED" } : {}),
-        });
-      } finally {
-        if (this.pendingChatLoads.get(roomId) === pending) this.pendingChatLoads.delete(roomId);
-      }
-    })();
-    return pending.promise;
   }
 
   private findPlayer(room: RoomState, userId: number): LazerPlayer | undefined {
@@ -365,9 +322,6 @@ class RoomManager {
   removeRoom(roomId: number, options: { exclude?: boolean; reason: RoomRemovalReason }): void {
     log.debug("Removing room", { roomId, ...options });
     if (options.exclude) this.excludedRooms.add(roomId);
-    const chatLoad = this.pendingChatLoads.get(roomId);
-    if (chatLoad) chatLoad.cancelled = true;
-    this.pendingChatLoads.delete(roomId);
     const pending = this.pendingJoins.get(roomId);
     if (pending) pending.cancelled = true;
     if (this.rooms.delete(roomId)) {

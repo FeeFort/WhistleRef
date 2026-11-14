@@ -11,10 +11,6 @@ export async function sendChatMessage(channelId: number, message: string, isActi
   return fetchApi(await getAccessToken(), `chat/channels/${channelId}/messages`, "POST", { message, is_action: isAction });
 }
 
-export async function fetchChatMessages(channelId: number): Promise<ChatMessage[]> {
-  return fetchChatMessagesSince(channelId, 0);
-}
-
 export async function fetchChatMessagesSince(channelId: number, sinceMessageId: number, accessToken: () => Promise<string> = getAccessToken): Promise<ChatMessage[]> {
   if (!Number.isSafeInteger(sinceMessageId) || sinceMessageId < 0) throw new Error("Chat API returned an invalid message history cursor.");
   log.debug("Fetching chat history", { channelId });
