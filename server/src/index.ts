@@ -785,7 +785,7 @@ class BanchoConnection {
     const key = normalizeChannel(channel);
     this.pendingAutoSettings.add(key);
     try {
-      this.sendMessage(channel, "!mp settings");
+      this.sendMessage(channel, "!mp settings whistleref");
       ircLog.traceOut("Automatic settings request", { channel });
     } catch (error) {
       this.pendingAutoSettings.delete(key);
@@ -798,7 +798,7 @@ class BanchoConnection {
     if (!this.isOwnNick(nick) || !this.pendingAutoSettings.has(key)) {
       return false;
     }
-    if (!/^!mp\s+settings(?:\s|$)/i.test(text)) return false;
+    if (!/^!mp\s+settings\s+whistleref\s*$/i.test(text)) return false;
     this.pendingAutoSettings.delete(key);
     return true;
   }

@@ -510,6 +510,7 @@ watch(
         requestedChatHistories.delete(event.chat.id);
         return;
       }
+      activateRestoredChatInSidebar(event.chat);
       rememberServerChat(event.chat);
       const matchingMessages = pendingServerMessages.filter((message) => Number(message.chatId) === Number(event.chat?.id));
       for (const message of matchingMessages) handleServerChatMessage(message);
@@ -868,6 +869,8 @@ watch(
     if (event?.type === "channel_joined") {
       const channel = addJoinedChannel(event.channel);
       const joinedChannelId = channelId(event.channel);
+      const serverChat = findServerChatForLocalId(joinedChannelId);
+      if (serverChat?.status !== "archived") activateRestoredChatInSidebar(serverChat);
       if (pendingJoinChannel.value?.id === joinedChannelId && normalizeIrcNick(event.nick) === normalizeIrcNick(currentUser.value)) {
         clearPendingJoin();
         activeChat.value = joinedChannelId;
@@ -2542,6 +2545,8 @@ function removeDirectChat(chatId) {
 function applyLobbyState(event) {
   if (!event.channel || !event.state) return;
   const eventChannelId = channelId(event.channel);
+  const serverChat = findServerChatForLocalId(eventChannelId);
+  if (serverChat?.status === "archived") return;
   const existingChannel = joinedChannels.value.find((item) => item.id === eventChannelId);
   if (!existingChannel && pendingPartChannels.has(eventChannelId)) return;
 
@@ -2771,6 +2776,22 @@ function removeRestoredArchivedChat(chatId) {
     removeLazerRoomFromUi(localId);
   }
   delete restoredArchivedChats[chatId];
+}
+
+function activateRestoredChatInSidebar(chat) {
+  if (!chat || chat.status === "archived") return;
+  const localId = serverChatLocalId(chat);
+  const archivedLocalId = restoredArchivedChats[chat.id];
+  if (!localId || archivedLocalId !== localId) return;
+
+  const channel = joinedChannels.value.find((item) => item.id === localId);
+  if (channel) {
+    delete channel.archivedChatId;
+    channel.closed = false;
+    if (channel.lobby) channel.lobby.status = "active";
+  }
+  delete roomClosedByChat[localId];
+  delete restoredArchivedChats[chat.id];
 }
 
 function selectChat(chatId) {
@@ -3179,7 +3200,7 @@ function joinChannel(channel) {
   if (!joinedChannelId || pendingJoinChannel.value) return;
 
   const existingChannel = joinedChannels.value.find((item) => item.id === joinedChannelId);
-  if (existingChannel) {
+  if (existingChannel && !existingChannel.archivedChatId) {
     activeChat.value = existingChannel.id;
     addChannelDialogOpen.value = false;
     return;

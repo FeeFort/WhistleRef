@@ -97,7 +97,7 @@ export class StableChatBridge {
   }
 
   onOutgoingMessage(channel: string, text: string): void {
-    if (/^!mp\s+settings(?:\s|$)/i.test(text)) return;
+    if (/^!mp\s+settings\s+whistleref\s*$/i.test(text)) return;
     const nick = this.options.irc.ownNick();
     if (!nick) {
       this.options.logger.warn("Stable chat message could not be recorded without an IRC nickname", { channel });
