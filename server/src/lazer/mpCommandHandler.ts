@@ -15,6 +15,8 @@ function readableHubError(error: unknown): string | null {
   if (!(error instanceof Error)) return null;
   const message = error.message.trim();
   if (!message || /^An unexpected error occurred invoking '.+' on the server\.$/.test(message)) return null;
+  const refereeHubError = message.match(/\bRefereeHubException:\s*Error\s+\d+:\s*([\s\S]+)$/i);
+  if (refereeHubError?.[1]?.trim()) return refereeHubError[1].trim();
   if (/^(?:Cannot invoke |SignalR |WebSocket |Failed to start the connection)/i.test(message)) return null;
   return message;
 }
