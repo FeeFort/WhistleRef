@@ -172,7 +172,11 @@ export function importMaps(input: LobbyStateDocument, maps: unknown): LobbyState
   assertWritable(input);
   if (!isPlainObject(maps)) throw new Error("maps must be a plain object.");
   const next = clone(input);
-  next.maps = { ...next.maps, ...(maps as Partial<LobbyMaps>), slots: isPlainObject((maps as Record<string, unknown>).slots) ? clone((maps as Record<string, unknown>).slots) as Record<string, Record<string, unknown>> : next.maps.slots };
+  next.maps = {
+    ...next.maps,
+    ...(maps as Partial<LobbyMaps>),
+    slots: isPlainObject((maps as Record<string, unknown>).slots) ? (clone((maps as Record<string, unknown>).slots) as Record<string, Record<string, unknown>>) : next.maps.slots,
+  };
   return finish(input, next);
 }
 

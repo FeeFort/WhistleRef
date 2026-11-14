@@ -12,15 +12,63 @@ import { sendJson } from "../wsGateway.js";
 const FAILURE = "The command could not be completed.";
 
 const MOD_ALIASES: Record<string, string> = {
-  easy: "EZ", nofail: "NF", halftime: "HT", hardrock: "HR", suddendeath: "SD", perfect: "PF", doubletime: "DT", nightcore: "NC",
-  hidden: "HD", flashlight: "FL", relax: "RX", autopilot: "AP", spunout: "SO", touchdevice: "TD", freemod: "FM", key1: "1K", key2: "2K",
-  key3: "3K", key4: "4K", key5: "5K", key6: "6K", key7: "7K", key8: "8K", key9: "9K", keycoop: "CO", mirror: "MR", fadein: "FI",
+  easy: "EZ",
+  nofail: "NF",
+  halftime: "HT",
+  hardrock: "HR",
+  suddendeath: "SD",
+  perfect: "PF",
+  doubletime: "DT",
+  nightcore: "NC",
+  hidden: "HD",
+  flashlight: "FL",
+  relax: "RX",
+  autopilot: "AP",
+  spunout: "SO",
+  touchdevice: "TD",
+  freemod: "FM",
+  key1: "1K",
+  key2: "2K",
+  key3: "3K",
+  key4: "4K",
+  key5: "5K",
+  key6: "6K",
+  key7: "7K",
+  key8: "8K",
+  key9: "9K",
+  keycoop: "CO",
+  mirror: "MR",
+  fadein: "FI",
 };
 
 const LEGACY_STABLE_MOD_MASKS: Record<string, number> = {
-  NF: 1, EZ: 2, TD: 4, HD: 8, HR: 16, SD: 32, DT: 64, RX: 128, HT: 256, FL: 1024, SO: 4096, AP: 8192, NC: 576, PF: 16416,
-  "1K": 67108864, "2K": 268435456, "3K": 134217728, "4K": 32768, "5K": 65536, "6K": 131072, "7K": 262144, "8K": 524288,
-  "9K": 16777216, "10K": 33554432, FI: 1048576, RD: 2097152, MR: 1073741824,
+  NF: 1,
+  EZ: 2,
+  TD: 4,
+  HD: 8,
+  HR: 16,
+  SD: 32,
+  DT: 64,
+  RX: 128,
+  HT: 256,
+  FL: 1024,
+  SO: 4096,
+  AP: 8192,
+  NC: 576,
+  PF: 16416,
+  "1K": 67108864,
+  "2K": 268435456,
+  "3K": 134217728,
+  "4K": 32768,
+  "5K": 65536,
+  "6K": 131072,
+  "7K": 262144,
+  "8K": 524288,
+  "9K": 16777216,
+  "10K": 33554432,
+  FI: 1048576,
+  RD: 2097152,
+  MR: 1073741824,
 };
 
 async function acknowledge(client: WebSocket, message: ClientMessage): Promise<void> {
@@ -43,7 +91,9 @@ function say(roomId: number, text: string): void {
 function currentPlaylistItem(room: ReturnType<typeof roomManager.getRoom>) {
   const playlist = Array.isArray(room?.playlist) ? room.playlist : [];
   const currentId = Number(room?.current_playlist_item_id ?? room?.playlist_item_id ?? room?.state?.playlist_item_id);
-  return (Number.isInteger(currentId) && playlist.find((item) => item.id === currentId && !item.was_played)) || [...playlist].sort((a, b) => a.order - b.order).find((item) => !item.was_played) || null;
+  return (
+    (Number.isInteger(currentId) && playlist.find((item) => item.id === currentId && !item.was_played)) || [...playlist].sort((a, b) => a.order - b.order).find((item) => !item.was_played) || null
+  );
 }
 
 function expandLegacyModMask(value: string): string[] | null {
@@ -78,7 +128,9 @@ function modsForRuleset(rulesetId: number | undefined): Map<string, LazerModDefi
   const ruleset = entries.find((entry) => Number(entry.RulesetID) === Number(rulesetId)) || entries[0];
   const result = new Map<string, LazerModDefinition>();
   for (const mod of ruleset?.Mods || []) {
-    const acronym = String(mod.Acronym || "").trim().toUpperCase();
+    const acronym = String(mod.Acronym || "")
+      .trim()
+      .toUpperCase();
     if (acronym && !result.has(acronym)) result.set(acronym, mod);
   }
   return result;
@@ -88,7 +140,9 @@ function allMods(): Map<string, LazerModDefinition> {
   const entries = modsByRuleset as LazerRulesetMods[];
   const result = new Map<string, LazerModDefinition>();
   for (const mod of entries.flatMap((entry) => entry.Mods || [])) {
-    const acronym = String(mod.Acronym || "").trim().toUpperCase();
+    const acronym = String(mod.Acronym || "")
+      .trim()
+      .toUpperCase();
     if (acronym && !result.has(acronym)) result.set(acronym, mod);
   }
   return result;
@@ -241,23 +295,28 @@ async function execute(roomId: number, input: string): Promise<void> {
       if (current.ValidForMultiplayer !== true) return say(roomId, `${String(current.Name || name)} is not supported in multiplayer rooms`);
     }
     const conflicts: string[] = [];
-    for (let i = 0; i < requested.length; i++) for (let j = i + 1; j < requested.length; j++) {
-      const left = all.get(requested[i]);
-      const right = all.get(requested[j]);
-      const leftIncompatible = Array.isArray(left?.IncompatibleMods) && left.IncompatibleMods.map((mod) => String(mod).toUpperCase()).includes(requested[j]);
-      const rightIncompatible = Array.isArray(right?.IncompatibleMods) && right.IncompatibleMods.map((mod) => String(mod).toUpperCase()).includes(requested[i]);
-      if (leftIncompatible || rightIncompatible) conflicts.push(`${requested[i]} + ${requested[j]}`);
-    }
+    for (let i = 0; i < requested.length; i++)
+      for (let j = i + 1; j < requested.length; j++) {
+        const left = all.get(requested[i]);
+        const right = all.get(requested[j]);
+        const leftIncompatible = Array.isArray(left?.IncompatibleMods) && left.IncompatibleMods.map((mod) => String(mod).toUpperCase()).includes(requested[j]);
+        const rightIncompatible = Array.isArray(right?.IncompatibleMods) && right.IncompatibleMods.map((mod) => String(mod).toUpperCase()).includes(requested[i]);
+        if (leftIncompatible || rightIncompatible) conflicts.push(`${requested[i]} + ${requested[j]}`);
+      }
     if (conflicts.length) return say(roomId, `Mods ${[...new Set(conflicts)].join(", ")} conflict with each other.`);
     const requiredMods = requested.map((acronym) => ({ acronym }));
     const requiredConflicts = new Set(requested);
-    for (const acronym of requested) for (const incompatible of (all.get(acronym)?.IncompatibleMods as unknown[] || [])) requiredConflicts.add(String(incompatible).toUpperCase());
+    for (const acronym of requested) for (const incompatible of (all.get(acronym)?.IncompatibleMods as unknown[]) || []) requiredConflicts.add(String(incompatible).toUpperCase());
     for (const [acronym, definition] of all) {
-      if (requested.some((required) => Array.isArray(definition.IncompatibleMods) && definition.IncompatibleMods.map((mod) => String(mod).toUpperCase()).includes(required))) requiredConflicts.add(acronym);
+      if (requested.some((required) => Array.isArray(definition.IncompatibleMods) && definition.IncompatibleMods.map((mod) => String(mod).toUpperCase()).includes(required)))
+        requiredConflicts.add(acronym);
     }
     const allowedMods = wantsFreemod
-      ? [...all.values()].filter((mod) => mod.ValidForMultiplayer && mod.ValidForMultiplayerAsFreeMod)
-          .map((mod) => String(mod.Acronym).toUpperCase()).filter((acronym) => !requiredConflicts.has(acronym)).map((acronym) => ({ acronym }))
+      ? [...all.values()]
+          .filter((mod) => mod.ValidForMultiplayer && mod.ValidForMultiplayerAsFreeMod)
+          .map((mod) => String(mod.Acronym).toUpperCase())
+          .filter((acronym) => !requiredConflicts.has(acronym))
+          .map((acronym) => ({ acronym }))
       : [];
     const enabledNames = requested.map((acronym) => String(all.get(acronym)?.Name || acronym));
     const summary = [...(enabledNames.length ? [`enabled ${enabledNames.join(", ")}`] : []), `${wantsFreemod ? "enabled" : "disabled"} Freemod`].join(", ");

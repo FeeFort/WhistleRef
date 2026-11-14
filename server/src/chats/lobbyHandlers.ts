@@ -10,7 +10,8 @@ export interface StableLobbyAdapter {
 }
 
 export function validateLobbyCommand(type: string, message: Record<string, unknown>): string | null {
-  if (!["chat_lobby_state_get", "lobby_match_set", "lobby_map_state_set", "lobby_map_state_clear", "lobby_active_pool_set", "lobby_qualification_mode_set", "lobby_state_import"].includes(type)) return null;
+  if (!["chat_lobby_state_get", "lobby_match_set", "lobby_map_state_set", "lobby_map_state_clear", "lobby_active_pool_set", "lobby_qualification_mode_set", "lobby_state_import"].includes(type))
+    return null;
   if (type === "lobby_state_import") return Array.isArray(message.lobbies) ? null : "lobbies must be an array.";
   if (!Number.isSafeInteger(message.chatId) || (message.chatId as number) <= 0) return "chatId must be a positive integer.";
   if (type === "lobby_match_set" && (!message.patch || typeof message.patch !== "object" || Array.isArray(message.patch))) return "patch must be a plain object.";
@@ -42,7 +43,13 @@ export function createLobbyHandlers(chatService: ChatService, stable: StableLobb
     }
   };
   return {
-    chat_lobby_state_get: (client, message) => run(client, message, () => chatService.getLobbyState((message as Extract<ClientMessage, { type: "chat_lobby_state_get" }>).chatId), (value) => ({ type: "chat_lobby_state_response", chatId: (message as Extract<ClientMessage, { type: "chat_lobby_state_get" }>).chatId, lobbyState: value, requestId: message.requestId })),
+    chat_lobby_state_get: (client, message) =>
+      run(
+        client,
+        message,
+        () => chatService.getLobbyState((message as Extract<ClientMessage, { type: "chat_lobby_state_get" }>).chatId),
+        (value) => ({ type: "chat_lobby_state_response", chatId: (message as Extract<ClientMessage, { type: "chat_lobby_state_get" }>).chatId, lobbyState: value, requestId: message.requestId }),
+      ),
     lobby_match_set: (client, message) => {
       const payload = message as Extract<ClientMessage, { type: "lobby_match_set" }>;
       run(client, message, () => {
@@ -58,10 +65,30 @@ export function createLobbyHandlers(chatService: ChatService, stable: StableLobb
         }
       });
     },
-    lobby_map_state_set: (client, message) => { const p = message as Extract<ClientMessage, { type: "lobby_map_state_set" }>; run(client, message, () => chatService.setMapSlot(p.chatId, p.slot, p.patch)); },
-    lobby_map_state_clear: (client, message) => { const p = message as Extract<ClientMessage, { type: "lobby_map_state_clear" }>; run(client, message, () => chatService.clearMapStates(p.chatId)); },
-    lobby_active_pool_set: (client, message) => { const p = message as Extract<ClientMessage, { type: "lobby_active_pool_set" }>; run(client, message, () => chatService.setActivePool(p.chatId, p.poolId)); },
-    lobby_qualification_mode_set: (client, message) => { const p = message as Extract<ClientMessage, { type: "lobby_qualification_mode_set" }>; run(client, message, () => chatService.setQualificationMode(p.chatId, p.enabled)); },
-    lobby_state_import: (client, message) => { const p = message as Extract<ClientMessage, { type: "lobby_state_import" }>; run(client, message, () => chatService.importMaps(p.lobbies), (value) => ({ result: value })); },
+    lobby_map_state_set: (client, message) => {
+      const p = message as Extract<ClientMessage, { type: "lobby_map_state_set" }>;
+      run(client, message, () => chatService.setMapSlot(p.chatId, p.slot, p.patch));
+    },
+    lobby_map_state_clear: (client, message) => {
+      const p = message as Extract<ClientMessage, { type: "lobby_map_state_clear" }>;
+      run(client, message, () => chatService.clearMapStates(p.chatId));
+    },
+    lobby_active_pool_set: (client, message) => {
+      const p = message as Extract<ClientMessage, { type: "lobby_active_pool_set" }>;
+      run(client, message, () => chatService.setActivePool(p.chatId, p.poolId));
+    },
+    lobby_qualification_mode_set: (client, message) => {
+      const p = message as Extract<ClientMessage, { type: "lobby_qualification_mode_set" }>;
+      run(client, message, () => chatService.setQualificationMode(p.chatId, p.enabled));
+    },
+    lobby_state_import: (client, message) => {
+      const p = message as Extract<ClientMessage, { type: "lobby_state_import" }>;
+      run(
+        client,
+        message,
+        () => chatService.importMaps(p.lobbies),
+        (value) => ({ result: value }),
+      );
+    },
   };
 }

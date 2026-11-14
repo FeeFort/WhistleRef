@@ -16,10 +16,40 @@ const stamp = "2026-11-08T00:00:00.000Z";
 function setup() {
   const db = openDatabase(":memory:");
   const messages = [];
-  const irc = { joins: [], leaves: [], ready: true, nick: "Referee", joinChannel(channel) { this.joins.push(channel); }, leaveChannel(channel) { this.leaves.push(channel); }, isReady() { return this.ready; }, ownNick() { return this.nick; } };
+  const irc = {
+    joins: [],
+    leaves: [],
+    ready: true,
+    nick: "Referee",
+    joinChannel(channel) {
+      this.joins.push(channel);
+    },
+    leaveChannel(channel) {
+      this.leaves.push(channel);
+    },
+    isReady() {
+      return this.ready;
+    },
+    ownNick() {
+      return this.nick;
+    },
+  };
   const timers = [];
   const service = new ChatService(db, { onMessage: (message) => messages.push(message) }, () => stamp);
-  const bridge = new StableChatBridge({ chatService: service, irc, clock: () => stamp, logger: { debug() {}, warn() {} }, setTimeout: (callback, delay) => { const timer = { callback, delay, cleared: false }; timers.push(timer); return timer; }, clearTimeout: (timer) => { timer.cleared = true; } });
+  const bridge = new StableChatBridge({
+    chatService: service,
+    irc,
+    clock: () => stamp,
+    logger: { debug() {}, warn() {} },
+    setTimeout: (callback, delay) => {
+      const timer = { callback, delay, cleared: false };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeout: (timer) => {
+      timer.cleared = true;
+    },
+  });
   service.registerPlatformAdapter("stable", { detach: (chat) => bridge.detach(chat) });
   return { db, service, bridge, irc, timers, messages };
 }
@@ -77,7 +107,16 @@ test("messages are recorded for active and closed chats, but not archived or unk
   service.archiveChat(chat.id);
   bridge.onChannelMessage("#mp_12", "Alice", "frozen", stamp);
   bridge.onChannelMessage("#mp_999", "Alice", "unknown", stamp);
-  assert.deepEqual(history(service, chat.id).filter((message) => message.kind === "message").map((message) => [message.author, message.text]), [["Alice", "hello"], ["Alice", "after close"], ["Referee", "outgoing"]]);
+  assert.deepEqual(
+    history(service, chat.id)
+      .filter((message) => message.kind === "message")
+      .map((message) => [message.author, message.text]),
+    [
+      ["Alice", "hello"],
+      ["Alice", "after close"],
+      ["Referee", "outgoing"],
+    ],
+  );
   assert.equal(messages.filter((message) => message.kind === "message").length, 3);
 });
 

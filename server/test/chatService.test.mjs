@@ -77,8 +77,14 @@ test("chats_list returns grouped message counts with status filtering and id ord
       [third.id, 1],
     ],
   );
-  assert.deepEqual(service.listChats(["active"]).map(({ id, messageCount }) => [id, messageCount]), [[second.id, 5]]);
-  assert.deepEqual(service.listChats().map(({ id }) => id), [first.id, second.id, third.id]);
+  assert.deepEqual(
+    service.listChats(["active"]).map(({ id, messageCount }) => [id, messageCount]),
+    [[second.id, 5]],
+  );
+  assert.deepEqual(
+    service.listChats().map(({ id }) => id),
+    [first.id, second.id, third.id],
+  );
   service.shutdown();
 });
 
@@ -89,7 +95,10 @@ test("chat_updated reports the message count at each lifecycle event", () => {
   const chat = service.openOrCreateChat({ platform: "stable", externalId: 30, title: "Room" }).chat;
   service.recordMessage(chat.id, { author: "A", text: "one", kind: "message" });
   service.archiveChat(chat.id);
-  assert.deepEqual(updates.map(({ messageCount }) => messageCount), [0, 1]);
+  assert.deepEqual(
+    updates.map(({ messageCount }) => messageCount),
+    [0, 1],
+  );
   service.shutdown();
 });
 

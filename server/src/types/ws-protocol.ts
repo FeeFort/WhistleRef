@@ -29,7 +29,6 @@ export type ChatServerMessage =
   | { type: "chat_message"; message: MessageWire }
   | { type: "chat_lobby_state_updated"; chatId: number; lobbyState: LobbyStateDocument }
   | { type: "settings_updated"; settings: ChatSettings };
-  
 
 export type ClientCommand =
   | { type: "login"; login: string; password: string }

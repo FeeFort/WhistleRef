@@ -1,13 +1,33 @@
 import type { DatabaseSync } from "node:sqlite";
 import { closeDatabase } from "../db/database.js";
-import { deleteArchivedOlderThan, deleteChats as deleteArchivedChats, findChat, getChat, listChats as readChats, listChatsWithMessageCounts, readLobbyState, writeLobbyState } from "../db/chatsRepo.js";
+import {
+  deleteArchivedOlderThan,
+  deleteChats as deleteArchivedChats,
+  findChat,
+  getChat,
+  listChats as readChats,
+  listChatsWithMessageCounts,
+  readLobbyState,
+  writeLobbyState,
+} from "../db/chatsRepo.js";
 import { getAllSettings, getSetting as readSetting, setSetting as writeSetting } from "../db/settingsRepo.js";
 import { countMessages, getMessagesPage, getHighestExternalId as readHighestExternalId } from "../db/messagesRepo.js";
 import type { Chat, ChatSettings, ChatStatus, ChatWire, Message, MessageWire, OpenOrCreateChatInput, RecordMessageInput, ChatDeleteResult } from "../types/index.js";
 import { ChatLifecycle } from "./chatLifecycle.js";
 import { MessageRecorder } from "./messageRecorder.js";
 import { toChatWire, toMessageWire } from "./chatMapper.js";
-import { applyMatchPatch, clearMapStates, importMaps as importMapDocument, isMapsEmpty, normalize, replaceMatch, setActivePool, setMapSlot, setQualificationMode, type LobbyStateDocument } from "./lobbyState.js";
+import {
+  applyMatchPatch,
+  clearMapStates,
+  importMaps as importMapDocument,
+  isMapsEmpty,
+  normalize,
+  replaceMatch,
+  setActivePool,
+  setMapSlot,
+  setQualificationMode,
+  type LobbyStateDocument,
+} from "./lobbyState.js";
 
 type Clock = () => string;
 export interface ChatServiceCallbacks {
@@ -127,7 +147,8 @@ export class ChatService {
       const serializedItem = JSON.stringify(item);
       if (typeof serializedItem !== "string" || Buffer.byteLength(serializedItem, "utf8") > 64 * 1024) throw new Error("Each lobby import item must be at most 64 KB.");
       const value = item as Record<string, unknown>;
-      if ((value.platform !== "stable" && value.platform !== "lazer") || !Number.isSafeInteger(value.externalId) || !value.maps || typeof value.maps !== "object" || Array.isArray(value.maps)) throw new Error("Each lobby import item requires platform, externalId and maps.");
+      if ((value.platform !== "stable" && value.platform !== "lazer") || !Number.isSafeInteger(value.externalId) || !value.maps || typeof value.maps !== "object" || Array.isArray(value.maps))
+        throw new Error("Each lobby import item requires platform, externalId and maps.");
       const chat = findChat(this.database, value.platform, value.externalId as number);
       if (!chat || chat.status === "archived") {
         skipped++;
