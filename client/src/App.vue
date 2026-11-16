@@ -2887,7 +2887,9 @@ function isAppFocused() {
 
 function notifyIncomingMessage(chatId, message) {
   if (activeChat.value === chatId && isAppFocused()) return;
-  if (ignoreBanchoBot.value && message.author?.toLowerCase() === "banchobot") return;
+  const isBanchoBot = message.author?.toLowerCase() === "banchobot";
+  const isNotificationException = /^All players are ready!?$/i.test(String(message.text || "").trim()) || /^The match has finished!?$/i.test(String(message.text || "").trim());
+  if (ignoreBanchoBot.value && isBanchoBot && !isNotificationException) return;
 
   if (soundEnabled.value && notificationMatchesTrigger(soundTrigger.value, message)) {
     playNotificationSound();
@@ -4180,7 +4182,7 @@ function handleLazerSendResult(result) {
           <div class="settings-page__setting">
             <div class="settings-page__setting-info">
               <h3>Ignore BanchoBot</h3>
-              <p>Do not play sounds or show toasts for messages from BanchoBot.</p>
+              <p>Do not play sounds or show toasts for BanchoBot messages, except “All players are ready” and “The match has finished!”.</p>
             </div>
             <div class="settings-page__setting-control">
               <ToggleSwitch v-model="ignoreBanchoBot" :disabled="!soundEnabled && !toastEnabled" inputId="notification-ignore-bancho-bot" class="app-solid-switch" />
