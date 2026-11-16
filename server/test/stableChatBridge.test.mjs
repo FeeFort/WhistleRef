@@ -2,13 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { openDatabase } from "../src/db/database.ts";
 import { ChatService } from "../src/chats/chatService.ts";
-import {
-  StableChatBridge,
-  STABLE_CHAT_RESTORE_TIMEOUT_MS,
-  STABLE_CHAT_SYSTEM_TEXT,
-  formatMultiplayerChannel,
-  parseMultiplayerChannel,
-} from "../src/chats/stableChatBridge.ts";
+import { StableChatBridge, STABLE_CHAT_RESTORE_TIMEOUT_MS, STABLE_CHAT_SYSTEM_TEXT, formatMultiplayerChannel, parseMultiplayerChannel } from "../src/chats/stableChatBridge.ts";
 
 const stamp = "2026-11-08T00:00:00.000Z";
 
