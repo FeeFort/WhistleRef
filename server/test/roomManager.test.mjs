@@ -161,7 +161,7 @@ await test("room synchronization", async (t) => {
           });
     const syncing = roomManager.resync();
     await new Promise((resolve) => setImmediate(resolve));
-    roomManager.removeRoom(1);
+    roomManager.removeRoom(1, { reason: "closed" });
     await new Promise((resolve) => setImmediate(resolve));
     resolveJoin(snapshot(1));
     await new Promise((resolve) => setImmediate(resolve));
@@ -207,8 +207,8 @@ await test("room synchronization", async (t) => {
     await assert.rejects(roomManager.joinRoom(11), /Denied/);
     invoke = async () => snapshot(11);
     await roomManager.joinRoom(11);
-    roomManager.removeRoom(10);
-    roomManager.removeRoom(11);
+    roomManager.removeRoom(10, { reason: "closed" });
+    roomManager.removeRoom(11, { reason: "closed" });
   });
 
   await t.test("creation captures early events only for the returned room", async () => {
@@ -232,7 +232,7 @@ await test("room synchronization", async (t) => {
       deferred.some((event) => event.roomId === 99),
       false,
     );
-    roomManager.removeRoom(12);
+    roomManager.removeRoom(12, { reason: "closed" });
   });
 
   await t.test("unknown rooms are rejected while pending joins and tracked rooms are accepted", async () => {
@@ -252,7 +252,7 @@ await test("room synchronization", async (t) => {
     await joining;
     assert.equal(roomManager.getRoom(13).players[0].user_id, 42);
     assert.equal(roomManager.handleHubEvent("MatchCompleted", { room_id: 13, playlist_item_id: 1 }), true);
-    roomManager.removeRoom(13);
+    roomManager.removeRoom(13, { reason: "closed" });
     warnings.mock.restore();
   });
 
@@ -294,7 +294,7 @@ await test("room synchronization", async (t) => {
     assert.deepEqual(roomManager.getRoom(78).referees, [{ user_id: 45 }]);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(calls, 1);
-    roomManager.removeRoom(78);
+    roomManager.removeRoom(78, { reason: "closed" });
   });
 
   await t.test("referee notifications for another room are not swallowed by MakeRoom", async () => {
@@ -315,8 +315,8 @@ await test("room synchronization", async (t) => {
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(roomManager.getRoom(80).room_id, 80);
     assert.equal(roomManager.getRoom(81).room_id, 81);
-    roomManager.removeRoom(80);
-    roomManager.removeRoom(81);
+    roomManager.removeRoom(80, { reason: "closed" });
+    roomManager.removeRoom(81, { reason: "closed" });
   });
 
   await t.test("Added and Removed for unknown rooms never invoke JoinRoom", () => {
@@ -388,7 +388,7 @@ await test("room synchronization", async (t) => {
       assert.equal(roomManager.getRoom(89), undefined);
       invoke = async () => snapshot(89);
       await roomManager.joinRoom(89);
-      roomManager.removeRoom(89);
+      roomManager.removeRoom(89, { reason: "closed" });
       invoke = () => new Promise(() => {});
       await assert.rejects(invokeHub("MakeRoom", {}), (error) => error.code === "REQUEST_TIMEOUT" && error.outcomeUnknown === true);
     } finally {
@@ -398,7 +398,7 @@ await test("room synchronization", async (t) => {
 
   await t.test("closed rooms from a stale ListRooms response are never rejoined", async () => {
     roomManager.trackRoom(snapshot(91));
-    roomManager.removeRoom(91, true);
+    roomManager.removeRoom(91, { exclude: true, reason: "closed" });
     const calls = [];
     invoke = async (method, roomId) => {
       calls.push([method, roomId]);
@@ -411,7 +411,7 @@ await test("room synchronization", async (t) => {
     );
     assert.equal(roomManager.getRoom(91), undefined);
     assert.ok(roomManager.getRoom(92));
-    roomManager.removeRoom(92);
+    roomManager.removeRoom(92, { reason: "closed" });
   });
 
   await t.test("SignalR diagnostics redact passwords in request logs", async (t) => {
@@ -449,7 +449,7 @@ await test("room synchronization", async (t) => {
     invoke = async () => snapshot(95, "Valid retry");
     await roomManager.joinRoom(95);
     assert.equal(roomManager.getRoom(95).name, "Valid retry");
-    roomManager.removeRoom(95);
+    roomManager.removeRoom(95, { reason: "closed" });
   });
 
   await t.test("overlapping events preserve full snapshot players and publish one final state", async () => {
@@ -483,7 +483,7 @@ await test("room synchronization", async (t) => {
     assert.equal(room.max_participants, 8);
     assert.deepEqual(room.referees, []);
     assert.equal(updates.length, 1);
-    roomManager.removeRoom(97);
+    roomManager.removeRoom(97, { reason: "closed" });
   });
 
   await t.test("self kick removes tracking and prevents resync without invoking LeaveRoom", async () => {
@@ -509,7 +509,7 @@ await test("room synchronization", async (t) => {
     roomManager.handleHubEvent("UserKicked", { room_id: room.room_id, kicked_user_id: 42, kicking_user_id: 15055190 });
     assert.equal(roomManager.getRoom(room.room_id), room);
     assert.deepEqual(room.players, [{ user_id: 35948605 }]);
-    roomManager.removeRoom(room.room_id);
+    roomManager.removeRoom(room.room_id, { reason: "closed" });
   });
 
   for (const method of ["JoinRoom", "MakeRoom"]) {
@@ -538,7 +538,7 @@ await test("room synchronization", async (t) => {
     roomManager.trackRoom(room);
     roomManager.handleHubEvent("UserKicked", { room_id: room.room_id, kicked_user_id: 35948605, kicking_user_id: 15055190 });
     assert.equal(roomManager.getRoom(room.room_id), room);
-    roomManager.removeRoom(room.room_id);
+    roomManager.removeRoom(room.room_id, { reason: "closed" });
   });
 
   await t.test("session reset rejects old room snapshots and chat waits", async () => {
@@ -578,7 +578,7 @@ await test("room synchronization", async (t) => {
     assert.equal(roomManager.getRoom(100), undefined);
     assert.equal(roomManager.getRoom(101).room_id, 101);
     assert.deepEqual(statuses.at(-1).failedRoomIds, [100]);
-    roomManager.removeRoom(101);
+    roomManager.removeRoom(101, { reason: "closed" });
   });
 
   await t.test("resync reports retry details and clears them after recovery", async () => {
@@ -608,7 +608,7 @@ await test("room synchronization", async (t) => {
         { operation: "JoinRoom", roomId: 104, attempt: 2, maxAttempts: config.hubRetry.attempts, validDelay: true },
       ],
     );
-    roomManager.removeRoom(104);
+    roomManager.removeRoom(104, { reason: "closed" });
   });
 
   await t.test("resync never repeats local failures", async () => {
@@ -641,7 +641,7 @@ await test("room synchronization", async (t) => {
       invoke = async () => (++calls < 2 ? { ...snapshot(103), players: null } : snapshot(103));
       await roomManager.joinRoom(103);
       assert.equal(calls, 2);
-      roomManager.removeRoom(103);
+      roomManager.removeRoom(103, { reason: "closed" });
     } finally {
       config.hubRequestTimeoutMs = previousTimeout;
     }
@@ -704,6 +704,33 @@ await test("room synchronization", async (t) => {
     assert.equal(forwarded.length, before);
     await assert.rejects(invokeHub("ListRooms"), /not connected/);
     assert.equal(statuses.at(-1).state, "disconnected");
+  });
+
+  await t.test("explicit joins clear exclusions and resync skips database archived rooms", async () => {
+    const calls = [];
+    await connectToRefereeHub(
+      (event) => forwarded.push(event),
+      () => roomManager.resync(),
+      (event) => statuses.push(event),
+    );
+    roomManager.trackRoom(snapshot(105));
+    roomManager.removeRoom(105, { exclude: true, reason: "archived" });
+    invoke = async (method, id) => {
+      calls.push([method, id]);
+      return method === "ListRooms" ? { room_ids: [105, 106] } : snapshot(id);
+    };
+    const joined = await roomManager.joinRoom(105, undefined, undefined, { explicit: true });
+    assert.equal(joined.room_id, 105);
+    roomManager.removeRoom(105, { reason: "reset" });
+    roomManager.setArchivedRoomProvider(() => new Set([106]));
+    calls.length = 0;
+    await roomManager.resync();
+    assert.deepEqual(calls, [
+      ["ListRooms", undefined],
+      ["JoinRoom", 105],
+    ]);
+    roomManager.setArchivedRoomProvider(() => new Set());
+    roomManager.removeRoom(105, { reason: "reset" });
   });
 });
 import { logger } from "../src/logger/logger.ts";

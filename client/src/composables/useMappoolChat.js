@@ -1,9 +1,9 @@
 const PARSER_VERSION = "1";
 
 const PHASE_PATTERNS = [
-  { phase: "opening-ban", pattern: /\b(?:your|the)\s+ban\b|\bban(?:ning)?\s+phase\b|\bstart(?:ing)?\s+bans?\b/i },
-  { phase: "opening-protect", pattern: /\b(?:your|the)\s+protect\b|\bprotect(?:ing)?\s+phase\b|\bstart(?:ing)?\s+protects?\b/i },
-  { phase: "pick", pattern: /\b(?:your|the)\s+pick\b|\bpick(?:ing)?\s+phase\b|\bstart(?:ing)?\s+picks?\b/i },
+  { phase: "opening-ban", pattern: /\b(?:first|next)\s+bans?\b|\b(?:your|the)\s+ban\b|\bban(?:ning)?\s+phase\b|\bstart(?:ing)?\s+bans?\b/i },
+  { phase: "opening-protect", pattern: /\b(?:first|next)\s+(?:protect(?:ion)?s?)\b|\b(?:your|the)\s+protect\b|\bprotect(?:ing)?\s+phase\b|\bstart(?:ing)?\s+protects?\b/i },
+  { phase: "pick", pattern: /\b(?:first|next)\s+picks?\b|\b(?:your|the)\s+pick\b|\bpick(?:ing)?\s+phase\b|\bstart(?:ing)?\s+picks?\b/i },
   {
     phase: "opening-ban",
     pattern:

@@ -1,7 +1,17 @@
 import { ref, watch } from "vue";
 
-const STORAGE_KEYS = Object.freeze({ stable: "whistleref-mappool-state", lazer: "whistleref-lazer-mappool-state" });
 const MAPPOOLS_KEYS = Object.freeze({ stable: "whistleref-mappools", lazer: "whistleref-lazer-mappools" });
+const LOBBY_STATE_MIGRATION_KEY = "whistleref-lobby-state-server-v1";
+
+try {
+  if (localStorage.getItem(LOBBY_STATE_MIGRATION_KEY) !== "1") {
+    localStorage.removeItem("whistleref-mappool-state");
+    localStorage.removeItem("whistleref-lazer-mappool-state");
+    localStorage.setItem(LOBBY_STATE_MIGRATION_KEY, "1");
+  }
+} catch {
+  // localStorage can be unavailable in a restricted browser context.
+}
 const DEFAULT_WIN_CONDITION = `const room = await parseRoom();
 system.sendMessage(\`Scores: \${room.teamRed.score} - \${room.teamBlue.score}\`);
 return calculateWinner({ red: room.teamRed.score, blue: room.teamBlue.score }, { onTie: "manual" });`;
@@ -139,20 +149,6 @@ return calculateWinner({ red: adjustedTeamScore(room.teamRed), blue: adjustedTea
 return calculateWinner({ red: room.teamRed.${metric}, blue: room.teamBlue.${metric} }, { reverse: ${reverse ? "true" : "false"}, onTie: "manual" });`;
 }
 
-function readStoredState(mode = "stable") {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS[mode] || STORAGE_KEYS.stable) || "null");
-    return {
-      qualificationModeByLobbyId: saved?.qualificationModeByLobbyId && typeof saved.qualificationModeByLobbyId === "object" ? saved.qualificationModeByLobbyId : {},
-      mapStatesByLobbyId: saved?.mapStatesByLobbyId && typeof saved.mapStatesByLobbyId === "object" ? saved.mapStatesByLobbyId : {},
-      activePoolByLobbyId: saved?.activePoolByLobbyId && typeof saved.activePoolByLobbyId === "object" ? saved.activePoolByLobbyId : {},
-    };
-  } catch {
-    return { qualificationModeByLobbyId: {}, mapStatesByLobbyId: {}, activePoolByLobbyId: {} };
-  }
-}
-
-const storedStates = { stable: readStoredState("stable"), lazer: readStoredState("lazer") };
 function readMappools(mode = "stable") {
   try {
     const value = JSON.parse(localStorage.getItem(MAPPOOLS_KEYS[mode] || MAPPOOLS_KEYS.stable) || "[]");
@@ -165,35 +161,35 @@ const stores = {
   stable: {
     mode: "stable",
     mappools: ref(readMappools("stable")),
-    qualificationModeByLobbyId: ref(storedStates.stable.qualificationModeByLobbyId),
-    mapStatesByLobbyId: ref(storedStates.stable.mapStatesByLobbyId),
-    activePoolByLobbyId: ref(storedStates.stable.activePoolByLobbyId),
+    qualificationModeByLobbyId: ref({}),
+    mapStatesByLobbyId: ref({}),
+    activePoolByLobbyId: ref({}),
   },
   lazer: {
     mode: "lazer",
     mappools: ref(readMappools("lazer")),
-    qualificationModeByLobbyId: ref(storedStates.lazer.qualificationModeByLobbyId),
-    mapStatesByLobbyId: ref(storedStates.lazer.mapStatesByLobbyId),
-    activePoolByLobbyId: ref(storedStates.lazer.activePoolByLobbyId),
+    qualificationModeByLobbyId: ref({}),
+    mapStatesByLobbyId: ref({}),
+    activePoolByLobbyId: ref({}),
   },
 };
 
+let lobbyStateSync = null;
+
+export function configureLobbyStateSync(callback) {
+  lobbyStateSync = typeof callback === "function" ? callback : null;
+}
+
+function notifyLobbyStateSync(mode, operation) {
+  try {
+    lobbyStateSync?.({ mode, ...operation });
+  } catch {
+    // A disconnected socket must not break local UI updates.
+  }
+}
+
 Object.entries(stores).forEach(([mode, store]) => {
   const serializer = mode === "lazer" ? serializeLazerMappool : serializeMappool;
-  watch(
-    [store.qualificationModeByLobbyId, store.mapStatesByLobbyId, store.activePoolByLobbyId],
-    () => {
-      localStorage.setItem(
-        STORAGE_KEYS[mode],
-        JSON.stringify({
-          qualificationModeByLobbyId: store.qualificationModeByLobbyId.value,
-          mapStatesByLobbyId: store.mapStatesByLobbyId.value,
-          activePoolByLobbyId: store.activePoolByLobbyId.value,
-        }),
-      );
-    },
-    { deep: true },
-  );
   watch(store.mappools, (value) => localStorage.setItem(MAPPOOLS_KEYS[mode], JSON.stringify(value.map(serializer))), { deep: true });
   localStorage.setItem(MAPPOOLS_KEYS[mode], JSON.stringify(store.mappools.value.map(serializer)));
 });
@@ -436,12 +432,14 @@ function setMapState(store, lobbyId, slot, patch) {
     ...getMapState(store, lobbyId, slot),
     ...patch,
   };
+  notifyLobbyStateSync(store.mode, { operation: "map", lobbyId, slot, patch: { ...patch } });
 }
 
 function clearLobbyMapState(store, lobbyId) {
   const key = lobbyKey(lobbyId);
   if (!key || !store.mapStatesByLobbyId.value[key]) return;
   delete store.mapStatesByLobbyId.value[key];
+  notifyLobbyStateSync(store.mode, { operation: "clear_maps", lobbyId });
 }
 
 function clearAllMapStates(store) {
@@ -459,7 +457,10 @@ function hasQualificationMode(store, lobbyId) {
 function setQualificationMode(store, lobbyId, value) {
   const key = lobbyKey(lobbyId);
   if (!key) return;
-  store.qualificationModeByLobbyId.value[key] = value === true;
+  const enabled = value === true;
+  if (store.qualificationModeByLobbyId.value[key] === enabled) return;
+  store.qualificationModeByLobbyId.value[key] = enabled;
+  notifyLobbyStateSync(store.mode, { operation: "qualification", lobbyId, enabled });
 }
 
 function clearLobbyState(store, lobbyId) {
@@ -478,7 +479,23 @@ function getActivePool(store, lobbyId) {
 function setActivePool(store, lobbyId, poolId) {
   const key = lobbyKey(lobbyId);
   if (!key) return;
-  if (poolId) store.activePoolByLobbyId.value[key] = String(poolId);
+  const normalizedPoolId = poolId ? String(poolId) : null;
+  const previousPoolId = store.activePoolByLobbyId.value[key] || null;
+  if (previousPoolId === normalizedPoolId) return;
+  if (normalizedPoolId) store.activePoolByLobbyId.value[key] = normalizedPoolId;
+  else delete store.activePoolByLobbyId.value[key];
+  notifyLobbyStateSync(store.mode, { operation: "active_pool", lobbyId, poolId: normalizedPoolId });
+}
+
+export function applyServerLobbyState(mode, lobbyId, maps) {
+  const store = stores[mode] || stores.stable;
+  const key = lobbyKey(lobbyId);
+  if (!key || !maps || typeof maps !== "object") return;
+  const slots = maps.slots && typeof maps.slots === "object" && !Array.isArray(maps.slots) ? maps.slots : {};
+  store.mapStatesByLobbyId.value[key] = JSON.parse(JSON.stringify(slots));
+  store.qualificationModeByLobbyId.value[key] = maps.qualificationMode === true;
+  const poolId = typeof maps.activePoolId === "string" && maps.activePoolId ? maps.activePoolId : null;
+  if (poolId) store.activePoolByLobbyId.value[key] = poolId;
   else delete store.activePoolByLobbyId.value[key];
 }
 

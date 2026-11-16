@@ -21,8 +21,16 @@ import { addClient, removeClient, sendJson, broadcast, clientCount, requestConte
 import { connectToRefereeHub, disconnectFromRefereeHub } from "./lazer/refereeHubClient.js";
 import { roomManager } from "./lazer/roomManager.js";
 import * as lazerHandlers from "./lazer/handlers.js";
+import { handleLazerMpCommand } from "./lazer/mpCommandHandler.js";
 import type { LazerConnectionStateEvent, LazerSyncStateEvent, LazerRoomsEvent } from "./types/index.js";
 import { ChatSocket } from "./lazer/chatSocket.js";
+import { openDatabase } from "./db/database.js";
+import { ChatService } from "./chats/chatService.js";
+import { StableChatBridge } from "./chats/stableChatBridge.js";
+import { LazerChatBridge, setLazerChatBridge } from "./chats/lazerChatBridge.js";
+import { UserNameResolver } from "./chats/userNameResolver.js";
+import { fetchChatMessagesSince } from "./lazer/chatApi.js";
+import { createLobbyHandlers, validateLobbyCommand } from "./chats/lobbyHandlers.js";
 
 const launchedAfterUpdate = process.argv.includes("--updated");
 const sessionLog = logger.child("lazer", "session");
@@ -33,7 +41,23 @@ const authLog = logger.child("core", "auth");
 const apiLog = logger.child("core", "osuApi");
 const wsLog = logger.child("core", "webSocket");
 const updateLog = logger.child("core", "updater");
+const chatServiceLog = logger.child("core", "chatService");
 let chatSocket: ChatSocket | null = null;
+let chatService!: ChatService;
+let stableChatBridge!: StableChatBridge;
+let lazerChatBridge!: LazerChatBridge;
+let deferredChatEvents: unknown[] | null = null;
+
+function emitChatEvent(event: unknown): void {
+  if (deferredChatEvents) deferredChatEvents.push(event);
+  else broadcast(event);
+}
+
+function flushChatEvents(): void {
+  const events = deferredChatEvents ?? [];
+  deferredChatEvents = null;
+  for (const event of events) broadcast(event);
+}
 
 function startChatSocket(): void {
   if (shuttingDown) return;
@@ -53,7 +77,9 @@ function startChatSocket(): void {
         for (const message of messages) {
           const channelId = Number((message as Record<string, unknown>)?.channel_id);
           const room = Number.isInteger(channelId) ? roomManager.getRoomByChatChannel(channelId) : undefined;
-          if (room) broadcast({ type: "lazer_chat_message", roomId: room.room_id, message, users: data?.users ?? [] });
+          if (room) {
+            lazerChatBridge?.onLiveMessage(room.room_id, message as Record<string, unknown>, Array.isArray(data?.users) ? data.users : []);
+          }
         }
       }
     },
@@ -62,7 +88,7 @@ function startChatSocket(): void {
   void chatSocket.connect().catch((error) => chatLog.warn("Chat socket connection failed", { error }));
 }
 
-// TODO: add actual normal comments to this mess
+// TODO: add actual useful comments to this mess
 if (process.argv[2] === "--apply-update") {
   try {
     await applyPendingUpdate(process.argv[3], process.argv[4]);
@@ -268,8 +294,15 @@ async function startLazerSession(): Promise<void> {
   sessionLog.separator("Starting session");
   roomManager.setCurrentUserId(auth.user.id);
   roomManager.setListeners(
-    (room) => broadcast({ type: "lazer_room_state", room }),
-    (roomId) => broadcast({ type: "lazer_room_closed", roomId }),
+    (room) => {
+      broadcast({ type: "lazer_room_state", room });
+      lazerChatBridge?.onRoomChanged(room);
+    },
+    (roomId, reason) => {
+      // TODO(client-migration): Remove this legacy event after the client uses chat_updated.
+      if (reason === "closed" || reason === "reset") broadcast({ type: "lazer_room_closed", roomId });
+      lazerChatBridge?.onRoomRemoved(roomId, reason);
+    },
     (event) => {
       if (event.type === "lazer_sync_state") {
         lazerSyncState = event;
@@ -278,11 +311,18 @@ async function startLazerSession(): Promise<void> {
       broadcast(event);
     },
     (event) => broadcast(event),
+    (room, explicit) => lazerChatBridge?.onRoomJoined(room, { explicit }),
+  );
+  roomManager.setArchivedRoomProvider(
+    () => lazerChatBridge?.archivedRoomIds() ?? new Set(),
+    (roomIds) => lazerChatBridge?.reconcile(roomIds),
   );
 
   await connectToRefereeHub(
     (event) => {
       if (roomManager.handleHubEvent(event.eventType, event.payload)) broadcast(event);
+      if (event.eventType === "RollCompleted")
+        void lazerChatBridge?.onRoll(event.payload as import("./types/index.js").RollCompletedEvent).catch((error) => sessionLog.warn("Lazer roll could not be recorded", { error }));
     },
     () => roomManager.resync(),
     (event) => {
@@ -336,7 +376,16 @@ class BanchoConnection {
   setState(state: ConnectionState, detail: string | null = null): void {
     ircLog.log(state === "error" ? "WARN" : "INFO", "Connection state changed", { previous: this.state, state, detail });
     this.state = state;
+    stableChatBridge?.onConnectionState(state);
     this.sendStatus(null, detail);
+  }
+
+  ownNick(): string | null {
+    return this.credentials?.login ?? null;
+  }
+
+  isReady(): boolean {
+    return this.state === "ready";
   }
 
   isOwnNick(nick: string | null): boolean {
@@ -355,6 +404,7 @@ class BanchoConnection {
 
   sendLobbyState(channel: string, state: LobbyState | undefined = this.lobbyStates.get(normalizeChannel(channel)), client: WebSocket | null = null): void {
     if (!state) return;
+    // TODO(client-migration): Remove this legacy event after the client uses chat_lobby_state_updated.
     const payload = {
       type: "lobby_state",
       channel: channel.replace(/^:/, ""),
@@ -431,7 +481,18 @@ class BanchoConnection {
     }
 
     ircLog.trace(changed ? "Lobby state update applied" : "Lobby state update unchanged", () => ({ channel, fields: Object.keys(update) }));
-    if (changed) this.sendLobbyState(channel, state);
+    if (changed) {
+      stableChatBridge?.onMatchStateChanged(channel, {
+        teamRed: state.teamRed,
+        teamBlue: state.teamBlue,
+        teamRedScore: state.teamRedScore,
+        teamBlueScore: state.teamBlueScore,
+        bestOf: state.bestOf,
+        nextPickTeam: state.nextPickTeam,
+        lastPlay: state.lastPlay,
+      });
+      this.sendLobbyState(channel, state);
+    }
   }
 
   closeLobby(channel: string): void {
@@ -557,6 +618,7 @@ class BanchoConnection {
       resultRedScore = outcome.result?.beatmapTeamRedScore ?? teamRedScore;
       resultBlueScore = outcome.result?.beatmapTeamBlueScore ?? teamBlueScore;
       scoreDifference = outcome.result?.scoreDifference ?? (winnerTeam ? Math.abs(resultRedScore - resultBlueScore) : 0);
+      for (const text of outcome.systemMessages) stableChatBridge?.onSystemLine(channel, text);
       broadcast({
         type: "win_condition_result",
         channel: channel.replace(/^:/, ""),
@@ -610,16 +672,19 @@ class BanchoConnection {
         const parsed = parseBanchoBotMessage(`Room name: ${name}`);
         if (parsed?.type !== "room") throw new Error("Unable to parse the room title returned by osu! API.");
         this.updateLobbyState(channel, parsed.value);
+        stableChatBridge?.onTitle(channel, parsed.value.name);
         return;
       } catch (error) {
         lastError = error;
         const message = error instanceof Error ? error.message : String(error);
         const retryable = /timed out|timeout|fetch failed|network|socket|connect/i.test(message);
         if (!retryable || attempt >= 2) {
+          const text = `Unable to load the room title from osu! API after ${attempt + 1} attempt${attempt ? "s" : ""}: ${message}. Falling back to IRC.`;
+          stableChatBridge?.onSystemLine(channel, text);
           broadcast({
             type: "lobby_system_message",
             channel: channel.replace(/^:/, ""),
-            text: `Unable to load the room title from osu! API after ${attempt + 1} attempt${attempt ? "s" : ""}: ${message}. Falling back to IRC.`,
+            text,
           });
           break;
         }
@@ -631,10 +696,12 @@ class BanchoConnection {
     try {
       this.sendMessage(channel, "!mp settings");
     } catch (error) {
+      const text = `Unable to request the room title through IRC: ${(error as Error).message}`;
+      stableChatBridge?.onSystemLine(channel, text);
       broadcast({
         type: "lobby_system_message",
         channel: channel.replace(/^:/, ""),
-        text: `Unable to request the room title through IRC: ${(error as Error).message}`,
+        text,
       });
     }
   }
@@ -660,6 +727,7 @@ class BanchoConnection {
         host: null,
         ...parsed.value,
       });
+      stableChatBridge?.onTitle(channel, parsed.value.name);
     } else if (parsed.type === "settings" || parsed.type === "size") {
       this.updateLobbyState(channel, parsed.value);
       if (parsed.type === "settings" && this.pendingAutoSettings.has(normalizeChannel(channel))) {
@@ -717,7 +785,7 @@ class BanchoConnection {
     const key = normalizeChannel(channel);
     this.pendingAutoSettings.add(key);
     try {
-      this.sendMessage(channel, "!mp settings");
+      this.sendMessage(channel, "!mp settings whistleref");
       ircLog.traceOut("Automatic settings request", { channel });
     } catch (error) {
       this.pendingAutoSettings.delete(key);
@@ -730,7 +798,7 @@ class BanchoConnection {
     if (!this.isOwnNick(nick) || !this.pendingAutoSettings.has(key)) {
       return false;
     }
-    if (!/^!mp\s+settings(?:\s|$)/i.test(text)) return false;
+    if (!/^!mp\s+settings\s+whistleref\s*$/i.test(text)) return false;
     this.pendingAutoSettings.delete(key);
     return true;
   }
@@ -824,6 +892,10 @@ class BanchoConnection {
       this.setState("ready");
     }
 
+    if (/^[45]\d\d$/.test(message.command)) {
+      for (const param of message.params) stableChatBridge?.onJoinFailed(param);
+    }
+
     if (["433", "451", "464"].includes(message.command)) {
       this.setState("error", config.authError);
     }
@@ -852,14 +924,20 @@ class BanchoConnection {
       if (isMultiplayerChannel(channel)) {
         this.handleLobbyMessage(channel, nick, text);
       }
-      if (!this.consumeAutoSettings(channel, nick, text)) {
+      const consumed = this.consumeAutoSettings(channel, nick, text);
+      const timestamp = new Date().toISOString();
+      if (!consumed && isMultiplayerChannel(channel)) {
+        stableChatBridge?.onChannelMessage(channel, nick, text, timestamp);
+      }
+      if (!consumed) {
+        // TODO(client-migration): Remove this legacy event for multiplayer channels after the client uses chat_message.
         broadcast({
           type: "message",
           channel,
           nick,
           text,
           isDirectMessage,
-          timestamp: new Date().toISOString(),
+          timestamp,
         });
       }
     }
@@ -871,10 +949,15 @@ class BanchoConnection {
       if (isMultiplayerChannel(channel) && this.isOwnNick(nick)) {
         if (message.command === "JOIN") {
           this.getLobbyState(channel, true);
+          stableChatBridge?.onOwnJoin(channel);
+          const restored = stableChatBridge?.restoreMatchState(channel);
+          if (restored) this.updateLobbyState(channel, restored);
         } else {
           this.closeLobby(channel);
+          stableChatBridge?.onOwnPart(channel);
         }
       }
+      // TODO(client-migration): Remove these legacy events after the client uses chat_updated.
       broadcast({
         type: message.command === "JOIN" ? "channel_joined" : "channel_parted",
         channel,
@@ -899,6 +982,7 @@ class BanchoConnection {
 
   sendMessage(channel: string, text: string): void {
     this.sendRaw(`PRIVMSG ${channel} :${text}`);
+    if (isMultiplayerChannel(channel)) stableChatBridge?.onOutgoingMessage(channel, text);
     if (isMultiplayerChannel(channel)) {
       const command = parseLobbyCommand(text);
       if (command) this.updateLobbyState(channel, command.value);
@@ -1033,21 +1117,11 @@ function validateMessage(message: unknown): string | null {
       return null;
     },
     send_message: () => {
-      if (!isNonEmptyString(message.channel)) {
-        return "channel must be a non-empty string.";
-      }
-      if (!isNonEmptyString(message.message)) {
-        return "message must be a non-empty string.";
-      }
+      if (!isNonEmptyString(message.channel)) return "channel must be a non-empty string.";
+      if (!isNonEmptyString(message.message)) return "message must be a non-empty string.";
       return null;
     },
     join_channel: () => {
-      if (!isNonEmptyString(message.channel)) {
-        return "channel must be a non-empty string.";
-      }
-      return null;
-    },
-    leave_channel: () => {
       if (!isNonEmptyString(message.channel)) {
         return "channel must be a non-empty string.";
       }
@@ -1063,30 +1137,13 @@ function validateMessage(message: unknown): string | null {
       if (!isNonEmptyString(message.channel)) return "channel must be a non-empty string.";
       return null;
     },
-    set_lobby_score: () => {
-      if (!isNonEmptyString(message.channel)) {
-        return "channel must be a non-empty string.";
-      }
-      if (!Number.isSafeInteger(message.teamRedScore) || (message.teamRedScore as number) < 0) {
-        return "teamRedScore must be a non-negative integer.";
-      }
-      if (!Number.isSafeInteger(message.teamBlueScore) || (message.teamBlueScore as number) < 0) {
-        return "teamBlueScore must be a non-negative integer.";
-      }
-      return null;
-    },
-    set_lobby_settings: () => {
-      if (!isNonEmptyString(message.channel)) {
-        return "channel must be a non-empty string.";
-      }
-      if (message.bestOf !== null && (!Number.isSafeInteger(message.bestOf) || (message.bestOf as number) < 1)) {
-        return "bestOf must be null or a positive integer.";
-      }
-      if (message.nextPickTeam !== null && !isNonEmptyString(message.nextPickTeam)) {
-        return "nextPickTeam must be null or a non-empty string.";
-      }
-      return null;
-    },
+    chat_lobby_state_get: () => validateLobbyCommand(String(message.type), message),
+    lobby_match_set: () => validateLobbyCommand(String(message.type), message),
+    lobby_map_state_set: () => validateLobbyCommand(String(message.type), message),
+    lobby_map_state_clear: () => validateLobbyCommand(String(message.type), message),
+    lobby_active_pool_set: () => validateLobbyCommand(String(message.type), message),
+    lobby_qualification_mode_set: () => validateLobbyCommand(String(message.type), message),
+    lobby_state_import: () => validateLobbyCommand(String(message.type), message),
     set_active_win_condition: () => {
       if (!isNonEmptyString(message.channel)) return "channel must be a non-empty string.";
       if (!Number.isSafeInteger(message.beatmapId) || (message.beatmapId as number) <= 0) return "beatmapId must be a positive integer.";
@@ -1096,9 +1153,27 @@ function validateMessage(message: unknown): string | null {
     check_update: () => null,
     start_update: () => null,
     cancel_update: () => null,
+    chats_list: () => {
+      if (message.statuses !== undefined && (!Array.isArray(message.statuses) || message.statuses.some((status) => !["active", "closed", "archived"].includes(String(status)))))
+        return "statuses must contain only active, closed, or archived values.";
+      return null;
+    },
+    chat_history: () => (Number.isSafeInteger(message.chatId) && (message.chatId as number) > 0 ? null : "chatId must be a positive integer."),
+    chat_archive: () => (Number.isSafeInteger(message.chatId) && (message.chatId as number) > 0 ? null : "chatId must be a positive integer."),
+    chat_delete: () => (Array.isArray(message.chatIds) && message.chatIds.every((id) => Number.isSafeInteger(id) && (id as number) > 0) ? null : "chatIds must be an array of positive integers."),
+    settings_get: () => null,
+    settings_set: () => (isNonEmptyString(message.key) && Object.hasOwn(message, "value") ? null : "key must be a non-empty string and value is required."),
     confirm_install: () => null,
     test_win_condition: () => {
       if (!isNonEmptyString(message.slotId) || typeof message.source !== "string" || !isRecord(message.sampleContext)) return "slotId, source and sampleContext are required.";
+      return null;
+    },
+    lazer_mp_command: () => {
+      const roomError = validateLazerRoomId(message);
+      if (roomError) return roomError;
+      if (!isNonEmptyString(message.command) || message.command.length > 2000 || !/^!mp\s+/i.test(message.command.trim())) {
+        return "command must be a !mp command of at most 2000 characters.";
+      }
       return null;
     },
     lazer_make_room: () => {
@@ -1115,9 +1190,7 @@ function validateMessage(message: unknown): string | null {
         return "max_participants must be a non-negative integer.";
       return null;
     },
-    lazer_load_chat: () => validateLazerRoomId(message),
     lazer_join_room: () => validateLazerRoomId(message),
-    lazer_leave_room: () => validateLazerRoomId(message),
     lazer_close_room: () => validateLazerRoomId(message),
     lazer_invite_player: () => validateLazerUserAction(message),
     lazer_kick_player: () => validateLazerUserAction(message),
@@ -1378,16 +1451,6 @@ function handleJoinChannel(client: WebSocket, message: ClientMessage): void {
   }
 }
 
-function handleLeaveChannel(client: WebSocket, message: ClientMessage): void {
-  const { channel } = message as Extract<ClientMessage, { type: "leave_channel" }>;
-  try {
-    banchoConnection.leaveChannel(channel.trim());
-    sendJson(client, { type: "ack", received: message.type });
-  } catch (error) {
-    sendJson(client, { type: "error", message: (error as Error).message });
-  }
-}
-
 function handlePartChannel(client: WebSocket, message: ClientMessage): void {
   const { channel } = message as Extract<ClientMessage, { type: "part_channel" }>;
   try {
@@ -1402,37 +1465,6 @@ function handleSetLobbyTitle(client: WebSocket, message: ClientMessage): void {
   const payload = message as Extract<ClientMessage, { type: "refresh_lobby_title" }>;
   void banchoConnection.refreshLobbyTitle(payload.channel.trim());
   sendJson(client, { type: "ack", received: message.type });
-}
-
-function handleSetLobbyScore(client: WebSocket, message: ClientMessage): void {
-  const { channel, teamRedScore, teamBlueScore } = message as Extract<ClientMessage, { type: "set_lobby_score" }>;
-  try {
-    const state = banchoConnection.getLobbyState(channel.trim());
-    const winningScore = getWinningScore(state.bestOf);
-    if (winningScore && (teamRedScore > winningScore || teamBlueScore > winningScore)) {
-      throw new Error(`Match scores cannot exceed ${winningScore}.`);
-    }
-    banchoConnection.updateLobbyState(channel.trim(), {
-      teamRedScore,
-      teamBlueScore,
-    });
-    sendJson(client, { type: "ack", received: message.type });
-  } catch (error) {
-    sendJson(client, { type: "error", message: (error as Error).message });
-  }
-}
-
-function handleSetLobbySettings(client: WebSocket, message: ClientMessage): void {
-  const { channel, bestOf, nextPickTeam } = message as Extract<ClientMessage, { type: "set_lobby_settings" }>;
-  try {
-    banchoConnection.updateLobbyState(channel.trim(), {
-      bestOf,
-      nextPickTeam,
-    });
-    sendJson(client, { type: "ack", received: message.type });
-  } catch (error) {
-    sendJson(client, { type: "error", message: (error as Error).message });
-  }
 }
 
 function handleClientMessage(client: WebSocket, rawMessage: unknown): void {
@@ -1467,21 +1499,70 @@ function handleClientMessage(client: WebSocket, rawMessage: unknown): void {
     api_request: handleApiRequest,
     send_message: handleSendMessage,
     join_channel: handleJoinChannel,
-    leave_channel: handleLeaveChannel,
     part_channel: handlePartChannel,
     refresh_lobby_title: handleSetLobbyTitle,
-    set_lobby_score: handleSetLobbyScore,
-    set_lobby_settings: handleSetLobbySettings,
     set_active_win_condition: handleSetActiveWinCondition,
     check_update: handleCheckUpdate,
     start_update: handleStartUpdate,
     cancel_update: handleCancelUpdate,
+    chats_list: (client, message) => {
+      try {
+        sendJson(client, { type: "chats_list_response", chats: chatService.listChats((message as Extract<ClientMessage, { type: "chats_list" }>).statuses) });
+      } catch (error) {
+        sendJson(client, { type: "error", message: (error as Error).message });
+      }
+    },
+    chat_history: (client, message) => {
+      try {
+        const { chatId } = message as Extract<ClientMessage, { type: "chat_history" }>;
+        sendJson(client, { type: "chat_history_response", chatId, messages: chatService.getChatHistory(chatId) });
+      } catch (error) {
+        sendJson(client, { type: "error", request: message.type, chatId: (message as Extract<ClientMessage, { type: "chat_history" }>).chatId, message: (error as Error).message });
+      }
+    },
+    chat_archive: (client, message) => {
+      deferredChatEvents = [];
+      try {
+        chatService.archiveChat((message as Extract<ClientMessage, { type: "chat_archive" }>).chatId);
+        sendJson(client, { type: "ack", received: message.type });
+      } catch (error) {
+        sendJson(client, { type: "error", request: message.type, message: (error as Error).message });
+      } finally {
+        flushChatEvents();
+      }
+    },
+    chat_delete: (client, message) => {
+      deferredChatEvents = [];
+      try {
+        const { chatIds } = message as Extract<ClientMessage, { type: "chat_delete" }>;
+        const known = new Set(chatService.listChats().map((chat) => chat.id));
+        const unknown = [...new Set(chatIds)].filter((id) => !known.has(id));
+        if (unknown.length) throw new Error(`Unknown chats: ${unknown.join(", ")}`);
+        const { skipped } = chatService.deleteChats(chatIds);
+        if (skipped.length) throw new Error(`Chats were not archived and could not be deleted: ${skipped.join(", ")}`);
+        sendJson(client, { type: "ack", received: message.type });
+      } catch (error) {
+        sendJson(client, { type: "error", request: message.type, message: (error as Error).message });
+      } finally {
+        flushChatEvents();
+      }
+    },
+    settings_get: (client) => sendJson(client, { type: "settings_response", settings: chatService.getSettings() }),
+    settings_set: (client, message) => {
+      try {
+        const { key, value } = message as Extract<ClientMessage, { type: "settings_set" }>;
+        chatService.setSetting(key, value);
+        sendJson(client, { type: "ack", received: message.type });
+      } catch (error) {
+        sendJson(client, { type: "error", message: (error as Error).message });
+      }
+    },
+    ...createLobbyHandlers(chatService, banchoConnection),
     confirm_install: handleConfirmInstall,
     test_win_condition: handleTestWinCondition,
+    lazer_mp_command: handleLazerMpCommand,
     lazer_make_room: lazerHandlers.handleLazerMakeRoom,
-    lazer_load_chat: lazerHandlers.handleLazerLoadChat,
     lazer_join_room: lazerHandlers.handleLazerJoinRoom,
-    lazer_leave_room: lazerHandlers.handleLazerLeaveRoom,
     lazer_close_room: lazerHandlers.handleLazerCloseRoom,
     lazer_invite_player: lazerHandlers.handleLazerInvitePlayer,
     lazer_kick_player: lazerHandlers.handleLazerKickPlayer,
@@ -1576,6 +1657,37 @@ httpServer.listen(config.httpPort, config.httpHost, () => {
   })();
 });
 
+try {
+  chatService = new ChatService(openDatabase(), {
+    onChatUpdated: (chat) => emitChatEvent({ type: "chat_updated", chat }),
+    onChatDeleted: (chatId) => emitChatEvent({ type: "chat_deleted", chatId }),
+    onMessage: (message) => emitChatEvent({ type: "chat_message", message }),
+    onSettingsUpdated: (settings) => emitChatEvent({ type: "settings_updated", settings }),
+    onLobbyStateUpdated: (chatId, lobbyState) => emitChatEvent({ type: "chat_lobby_state_updated", chatId, lobbyState }),
+  });
+  stableChatBridge = new StableChatBridge({
+    chatService,
+    irc: banchoConnection,
+    logger: ircLog,
+  });
+  const userNames = new UserNameResolver();
+  lazerChatBridge = new LazerChatBridge({
+    chatService,
+    roomManager,
+    fetchHistory: fetchChatMessagesSince,
+    resolveName: (id) => userNames.resolve(id),
+    rememberName: (id, username) => userNames.remember(id, username),
+    logger: sessionLog,
+  });
+  setLazerChatBridge(lazerChatBridge);
+  chatService.registerPlatformAdapter("lazer", { detach: (chat) => lazerChatBridge.detach(chat) });
+  chatService.registerPlatformAdapter("stable", { detach: (chat) => stableChatBridge.detach(chat) });
+  chatService.startup();
+} catch (error) {
+  chatServiceLog.critical("Chat database could not be opened", { error });
+  void logger.flush().finally(() => process.exit(1));
+}
+
 createTray({ port: config.httpPort, onQuit: () => shutdown("tray") });
 
 function shutdown(signal?: string): void {
@@ -1587,6 +1699,7 @@ function shutdown(signal?: string): void {
     process.stdin.setRawMode(false);
   }
   logger.separator(`Shutting down${signal ? ` (${signal})` : ""}`);
+  if (typeof stableChatBridge !== "undefined") stableChatBridge.setShuttingDown();
   banchoConnection.logout();
 
   for (const client of webSocketServer.clients) {
@@ -1601,12 +1714,14 @@ function shutdown(signal?: string): void {
     pendingClosures -= 1;
     logger.trace("Component closure completed", { component, pendingClosures });
     if (pendingClosures === 0) {
+      chatService.shutdown();
       void logger.flush().finally(() => process.exit(0));
     }
   };
 
   const shutdownTimer = setTimeout(() => {
     logger.warn("Shutdown timed out, forcing exit", { pendingClosures });
+    chatService.shutdown();
     void logger.flush().finally(() => process.exit(0));
   }, 5000);
   shutdownTimer.unref();

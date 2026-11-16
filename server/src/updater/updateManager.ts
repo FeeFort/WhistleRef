@@ -8,6 +8,7 @@ import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import semver from "semver";
+import packageInfo from "../../package.json" with { type: "json" };
 import { GithubAsset, GithubRelease, UpdateCheckResult, UpdateInfo, UpdateProgressSender, UpdaterState } from "../types/index.js";
 
 declare const __APP_VERSION__: string;
@@ -27,7 +28,7 @@ export class UpdateError extends Error {
 }
 
 function currentVersion(): string {
-  return typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "0.0.0";
+  return typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : packageInfo.version;
 }
 
 function isPackagedRuntime(): boolean {

@@ -34,10 +34,8 @@ function send(socketInstance, payload) {
   return true;
 }
 
-// Used by local command adapters which need to correlate a particular
-// websocket acknowledgement with the request that caused it.
-function sendLazerCommand(type, payload = {}, requestId) {
-  return socket.value ? send(socket.value, { type, ...payload, ...(requestId ? { requestId } : {}) }) : false;
+function sendLazerMpCommand(room_id, command) {
+  return socket.value ? send(socket.value, { type: "lazer_mp_command", room_id, command }) : false;
 }
 
 function sendMessage(channel, message) {
@@ -46,6 +44,65 @@ function sendMessage(channel, message) {
 
 function sendChannelCommand(type, channel) {
   return socket.value ? send(socket.value, { type, channel }) : false;
+}
+
+function requestChatsList(statuses = ["active", "closed"]) {
+  return socket.value ? send(socket.value, { type: "chats_list", statuses }) : false;
+}
+
+function requestChatHistory(chatId) {
+  const id = Number(chatId);
+  return socket.value && Number.isSafeInteger(id) && id > 0 ? send(socket.value, { type: "chat_history", chatId: id }) : false;
+}
+
+function requestSettings() {
+  return socket.value ? send(socket.value, { type: "settings_get" }) : false;
+}
+
+function setServerSetting(key, value) {
+  return socket.value && typeof key === "string" && key ? send(socket.value, { type: "settings_set", key, value }) : false;
+}
+
+function requestLobbyState(chatId) {
+  const id = Number(chatId);
+  return socket.value && Number.isSafeInteger(id) && id > 0 ? send(socket.value, { type: "chat_lobby_state_get", chatId: id }) : false;
+}
+
+function setLobbyMatch(chatId, patch) {
+  const id = Number(chatId);
+  return socket.value && Number.isSafeInteger(id) && id > 0 && patch && typeof patch === "object" ? send(socket.value, { type: "lobby_match_set", chatId: id, patch }) : false;
+}
+
+function setLobbyMapState(chatId, slot, patch) {
+  const id = Number(chatId);
+  return socket.value && Number.isSafeInteger(id) && id > 0 && typeof slot === "string" && slot && patch && typeof patch === "object"
+    ? send(socket.value, { type: "lobby_map_state_set", chatId: id, slot, patch })
+    : false;
+}
+
+function clearLobbyMapState(chatId) {
+  const id = Number(chatId);
+  return socket.value && Number.isSafeInteger(id) && id > 0 ? send(socket.value, { type: "lobby_map_state_clear", chatId: id }) : false;
+}
+
+function setLobbyActivePool(chatId, poolId) {
+  const id = Number(chatId);
+  return socket.value && Number.isSafeInteger(id) && id > 0 ? send(socket.value, { type: "lobby_active_pool_set", chatId: id, poolId: poolId ? String(poolId) : null }) : false;
+}
+
+function setLobbyQualificationMode(chatId, enabled) {
+  const id = Number(chatId);
+  return socket.value && Number.isSafeInteger(id) && id > 0 ? send(socket.value, { type: "lobby_qualification_mode_set", chatId: id, enabled: enabled === true }) : false;
+}
+
+function archiveChat(chatId) {
+  const id = Number(chatId);
+  return socket.value && Number.isSafeInteger(id) && id > 0 ? send(socket.value, { type: "chat_archive", chatId: id }) : false;
+}
+
+function deleteChats(chatIds) {
+  const ids = Array.isArray(chatIds) ? [...new Set(chatIds.map(Number))] : [];
+  return socket.value && ids.length > 0 && ids.every((id) => Number.isSafeInteger(id) && id > 0) ? send(socket.value, { type: "chat_delete", chatIds: ids }) : false;
 }
 
 function testWinCondition(slotId, source, sampleContext) {
@@ -70,10 +127,6 @@ function rollLazer(room_id, max = 100) {
 
 function joinLazerRoom(room_id) {
   return socket.value ? send(socket.value, { type: "lazer_join_room", room_id }) : false;
-}
-
-function leaveLazerRoom(room_id) {
-  return socket.value ? send(socket.value, { type: "lazer_leave_room", room_id }) : false;
 }
 
 function closeLazerRoom(room_id) {
@@ -130,10 +183,6 @@ function editLazerPlaylistItem(room_id, playlist_item_id, payload) {
 
 function removeLazerPlaylistItem(room_id, playlist_item_id) {
   return socket.value ? send(socket.value, { type: "lazer_remove_playlist_item", room_id, playlist_item_id }) : false;
-}
-
-function loadLazerChat(room_id) {
-  return socket.value ? send(socket.value, { type: "lazer_load_chat", room_id }) : false;
 }
 
 function getRequestSocket() {
@@ -258,28 +307,6 @@ async function requestApi(endpoint, method = "GET", body = undefined) {
     }
   }
   throw new Error("API request failed.");
-}
-
-function setLobbyScore(channel, teamRedScore, teamBlueScore) {
-  return socket.value
-    ? send(socket.value, {
-        type: "set_lobby_score",
-        channel,
-        teamRedScore,
-        teamBlueScore,
-      })
-    : false;
-}
-
-function setLobbySettings(channel, bestOf, nextPickTeam) {
-  return socket.value
-    ? send(socket.value, {
-        type: "set_lobby_settings",
-        channel,
-        bestOf,
-        nextPickTeam,
-      })
-    : false;
 }
 
 function refreshLobbyTitle(channel) {
@@ -488,14 +515,23 @@ export function useServerConnection() {
     sendMessage,
     joinChannel,
     partChannel,
-    setLobbyScore,
-    setLobbySettings,
+    requestChatsList,
+    requestChatHistory,
+    requestSettings,
+    setServerSetting,
+    requestLobbyState,
+    setLobbyMatch,
+    setLobbyMapState,
+    clearLobbyMapState,
+    setLobbyActivePool,
+    setLobbyQualificationMode,
+    archiveChat,
+    deleteChats,
     refreshLobbyTitle,
     setActiveWinCondition,
     testWinCondition,
     makeLazerRoom,
     joinLazerRoom,
-    leaveLazerRoom,
     closeLazerRoom,
     startLazerMatch,
     abortLazerMatch,
@@ -510,11 +546,10 @@ export function useServerConnection() {
     editLazerCurrentPlaylistItem,
     editLazerPlaylistItem,
     removeLazerPlaylistItem,
-    loadLazerChat,
     lazerInvitePlayer: inviteLazerPlayer,
     sendLazerChatMessage,
     rollLazer,
-    sendLazerCommand,
+    sendLazerMpCommand,
     checkUpdate: requestUpdateCheck,
     startUpdate: () => sendUpdateCommand("start_update"),
     cancelUpdate: () => sendUpdateCommand("cancel_update"),
