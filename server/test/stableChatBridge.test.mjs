@@ -65,7 +65,7 @@ test("multiplayer channel helpers normalize stable channel forms", () => {
   assert.equal(formatMultiplayerChannel(123), "#mp_123");
 });
 
-test("own join creates, rejoins archived chats, and marks gaps once", () => {
+test("own join creates and reactivates archived chats", () => {
   const { service, bridge, messages } = setup();
   bridge.onOwnJoin("#mp_10", "Room");
   const chat = service.listChats()[0];
@@ -75,9 +75,10 @@ test("own join creates, rejoins archived chats, and marks gaps once", () => {
   assert.equal(messages.length, 0);
   service.archiveChat(chat.id);
   bridge.onOwnJoin("#mp_10");
-  assert.equal(messages.at(-1).text, STABLE_CHAT_SERVICE_TEXT.rejoined);
+  assert.equal(service.listChats()[0].status, "active");
+  assert.equal(messages.at(-1).text, "Chat was archived");
   bridge.onOwnJoin("#mp_10");
-  assert.equal(messages.filter((message) => message.text === STABLE_CHAT_SERVICE_TEXT.rejoined).length, 1);
+  assert.equal(messages.filter((message) => message.text === "Chat was archived").length, 1);
 });
 
 test("part closes active chats and archived echo is ignored", () => {
