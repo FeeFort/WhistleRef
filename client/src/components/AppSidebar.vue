@@ -133,7 +133,13 @@ const profileMenuItems = computed(() => [
                       <span class="app-sidebar__chat-label">{{ chat.label }}</span>
                       <span v-if="unreadChats[chat.id]" class="app-sidebar__chat-unread" role="status" aria-label="New messages" />
                     </SidebarMenuButton>
-                    <button v-tooltip.top="`${chatActionLabel(chat)} chat`" type="button" class="app-sidebar__chat-close" :aria-label="`${chatActionLabel(chat)} ${chat.label} chat`" @click.stop="requestCloseChat(chat)">
+                    <button
+                      v-tooltip.top="`${chatActionLabel(chat)} chat`"
+                      type="button"
+                      class="app-sidebar__chat-close"
+                      :aria-label="`${chatActionLabel(chat)} ${chat.label} chat`"
+                      @click.stop="requestCloseChat(chat)"
+                    >
                       <X :size="11" />
                     </button>
                   </SidebarMenuItem>
@@ -179,7 +185,13 @@ const profileMenuItems = computed(() => [
                       </span>
                       <span v-if="unreadChats[room.id]" class="app-sidebar__chat-unread" role="status" aria-label="New messages" />
                     </SidebarMenuButton>
-                    <button v-tooltip.top="`${chatActionLabel(room)} chat`" type="button" class="app-sidebar__chat-close" :aria-label="`${chatActionLabel(room)} ${room.label} chat`" @click.stop="requestCloseChat(room)">
+                    <button
+                      v-tooltip.top="`${chatActionLabel(room)} chat`"
+                      type="button"
+                      class="app-sidebar__chat-close"
+                      :aria-label="`${chatActionLabel(room)} ${room.label} chat`"
+                      @click.stop="requestCloseChat(room)"
+                    >
                       <X :size="11" />
                     </button>
                   </SidebarMenuItem>

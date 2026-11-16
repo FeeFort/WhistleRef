@@ -1645,10 +1645,8 @@ function normalizeServerChatMessage(message) {
 
 function reconcilePendingServerMessage(chatId, normalized) {
   const list = channelMessages[chatId] || [];
-  const pending = list.find((item) =>
-    (item._serverPending || item.pending || item.awaitingEcho) &&
-    normalizeIrcNick(item.author) === normalizeIrcNick(normalized.author) &&
-    item.text === normalized.text,
+  const pending = list.find(
+    (item) => (item._serverPending || item.pending || item.awaitingEcho) && normalizeIrcNick(item.author) === normalizeIrcNick(normalized.author) && item.text === normalized.text,
   );
   if (!pending) return false;
   Object.assign(pending, normalized, { _serverPending: false, pending: false, awaitingEcho: false });
@@ -1682,10 +1680,8 @@ function replaceServerChatHistory(chat, messages) {
   for (const message of messages) {
     const normalized = normalizeServerChatMessage(message);
     if (!normalized) continue;
-    const pending = existing.find((item) =>
-      (item._serverPending || item.pending || item.awaitingEcho) &&
-      normalizeIrcNick(item.author) === normalizeIrcNick(normalized.author) &&
-      item.text === normalized.text,
+    const pending = existing.find(
+      (item) => (item._serverPending || item.pending || item.awaitingEcho) && normalizeIrcNick(item.author) === normalizeIrcNick(normalized.author) && item.text === normalized.text,
     );
     if (pending) Object.assign(pending, normalized, { _serverPending: false, pending: false, awaitingEcho: false });
     merged.set(normalized.serverMessageId, pending || normalized);
@@ -2402,7 +2398,14 @@ function applyServerLobbyDocument(chat, localId, document) {
 
 configureLobbyStateSync(({ operation, lobbyId, slot, patch, poolId, enabled }) => {
   const chat = findServerChatForLocalId(lobbyId);
-  const payload = operation === "map" ? { type: operation, slot, patch } : operation === "active_pool" ? { type: operation, poolId } : operation === "qualification" ? { type: operation, enabled } : { type: operation };
+  const payload =
+    operation === "map"
+      ? { type: operation, slot, patch }
+      : operation === "active_pool"
+        ? { type: operation, poolId }
+        : operation === "qualification"
+          ? { type: operation, enabled }
+          : { type: operation };
   if (chat) sendLobbyOperation(chat, payload);
   else {
     const queue = pendingLobbyOperations.get(lobbyId) || [];

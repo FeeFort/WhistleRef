@@ -5,7 +5,6 @@ import { ChatService } from "../src/chats/chatService.ts";
 import {
   StableChatBridge,
   STABLE_CHAT_RESTORE_TIMEOUT_MS,
-  STABLE_CHAT_SERVICE_TEXT,
   STABLE_CHAT_SYSTEM_TEXT,
   formatMultiplayerChannel,
   parseMultiplayerChannel,

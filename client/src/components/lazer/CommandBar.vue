@@ -273,10 +273,7 @@ function handleSave(data) {
               rounded
               class="command-bar__btn"
               :disabled="disabled || (cmd.id === 'lazer-start' && startCountdownSeconds > 0)"
-              :class="[
-                `command-bar__btn--${cmd.tone}`,
-                { 'command-bar__btn--countdown-active': cmd.id === 'lazer-abort-timer' && startCountdownSeconds > 0 },
-              ]"
+              :class="[`command-bar__btn--${cmd.tone}`, { 'command-bar__btn--countdown-active': cmd.id === 'lazer-abort-timer' && startCountdownSeconds > 0 }]"
               @click="sendBuiltin(cmd)"
             >
               <span v-if="cmd.id === 'lazer-start' && startCountdownSeconds > 0" class="command-bar__countdown" aria-live="polite">
@@ -587,11 +584,13 @@ function handleSave(data) {
 }
 
 @keyframes command-bar-countdown-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0;
   }
 
-  20%, 70% {
+  20%,
+  70% {
     opacity: 0.55;
   }
 

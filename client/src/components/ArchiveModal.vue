@@ -148,7 +148,11 @@ onBeforeUnmount(() => {
               <Transition name="archive-filter-menu">
                 <div v-if="filterMenuOpen" class="archive-modal__filter-overlay" role="listbox" aria-label="Archived chat filters" @click.stop>
                   <button
-                    v-for="filter in [{ value: 'all', label: 'All' }, { value: 'stable', label: 'Stable' }, { value: 'lazer', label: 'Lazer' }]"
+                    v-for="filter in [
+                      { value: 'all', label: 'All' },
+                      { value: 'stable', label: 'Stable' },
+                      { value: 'lazer', label: 'Lazer' },
+                    ]"
                     :key="filter.value"
                     type="button"
                     class="archive-modal__filter-option"
@@ -182,7 +186,13 @@ onBeforeUnmount(() => {
                       <RotateCcw :size="14" />
                       <span>Restore</span>
                     </button>
-                    <button type="button" class="archive-chat-card__action archive-chat-card__action--danger" :aria-label="`Delete ${chat.title}`" :disabled="Boolean(busyChatIds[chat.id])" @click="emit('delete-chat', chat)">
+                    <button
+                      type="button"
+                      class="archive-chat-card__action archive-chat-card__action--danger"
+                      :aria-label="`Delete ${chat.title}`"
+                      :disabled="Boolean(busyChatIds[chat.id])"
+                      @click="emit('delete-chat', chat)"
+                    >
                       <Trash2 :size="14" />
                       <span>Delete</span>
                     </button>
